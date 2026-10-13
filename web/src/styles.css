@@ -1,0 +1,146 @@
+@import "@fontsource-variable/inter/index.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Tokens. Screens use these through Tailwind (bg-card, text-ink-2, …), never
+ * raw colours. Purple marks what is ON: the main action, the selected tab,
+ * focus. Gains/OK are green, problems red, waiting amber. Text tokens pass
+ * 4.5:1 on card and bg.
+ */
+:root {
+  color-scheme: light;
+  --bg: 245 244 250;
+  --card: 255 255 255;
+  --sunk: 241 239 247;
+  --line: 228 225 238;
+  --ink: 24 20 38;
+  --ink-2: 82 76 102;
+  --ink-3: 108 102 128;
+  --brand: 94 47 194;
+  --brand-soft: 239 233 253;
+  --on-brand: 255 255 255;
+  --pos: 3 130 86;
+  --neg: 200 40 52;
+  --warn: 166 98 0;
+  --info: 30 104 200;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  margin: 0;
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+:focus-visible {
+  outline: 2px solid rgb(var(--brand));
+  outline-offset: 2px;
+}
+
+/* Slide to approve (pattern from custom-screener's SlideToConfirm). */
+.slide {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0 4px;
+  background: transparent;
+  cursor: grab;
+  touch-action: pan-y;
+}
+.slide:active {
+  cursor: grabbing;
+}
+.slide:disabled {
+  cursor: not-allowed;
+}
+.slide::-webkit-slider-runnable-track {
+  height: 100%;
+  background: transparent;
+}
+.slide::-moz-range-track {
+  height: 100%;
+  background: transparent;
+}
+.slide::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 48px;
+  height: 48px;
+  margin-top: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--brand)) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / 22px no-repeat;
+  box-shadow: 0 2px 8px rgb(94 47 194 / 0.35);
+}
+.slide::-moz-range-thumb {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(var(--brand)) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / 22px no-repeat;
+}
+.slide:disabled::-webkit-slider-thumb {
+  background-color: rgb(var(--ink-3));
+  box-shadow: none;
+}
+.slide:disabled::-moz-range-thumb {
+  background-color: rgb(var(--ink-3));
+}
+.slide:focus-visible {
+  outline: 2px solid rgb(var(--brand));
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.rise {
+  animation: rise 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes sheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+.sheet-in {
+  animation: sheet 220ms cubic-bezier(0.2, 0, 0, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}

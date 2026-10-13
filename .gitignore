@@ -1,0 +1,10 @@
+node_modules
+dist
+web/dist
+.env
+.env.*
+!.env.example
+data/state.json
+data/instruments-nse.json
+*.log
+.DS_Store
