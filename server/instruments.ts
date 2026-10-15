@@ -3,10 +3,14 @@
  * Tries Upstox's public instrument master (cached for a day in data/); if
  * that can't be reached, falls back to the Nifty 500 list (from
  * custom-screener) plus a few ETFs whose keys custom-screener trades.
+ * Hosted, the master is fetched at build time (scripts/build-vercel.ts) and
+ * shipped with the function, so a cold start never downloads it.
  */
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
+import { cfg } from "./config";
+import { dataDir } from "./paths";
 
 export interface Instrument {
   symbol: string;
@@ -16,8 +20,7 @@ export interface Instrument {
   tick: number;
 }
 
-const DATA = path.resolve(process.cwd(), "data");
-const CACHE = path.join(DATA, "instruments-nse.json");
+const cacheFile = () => path.join(dataDir(), "instruments-nse.json");
 
 /** ETFs (keys from custom-screener's src/engine/sectorIndices.ts). */
 const ETFS: Instrument[] = [
@@ -56,13 +59,15 @@ export class InstrumentBook {
     return this.bySym.size;
   }
 
-  /** Loads the Upstox master (cached a day) or the offline fallback. Never throws. */
+  /** Loads the Upstox master (cached a day; hosted, the copy shipped with the build) or the offline fallback. Never throws. */
   static async load(): Promise<InstrumentBook> {
     const book = new InstrumentBook(fallback());
+    const file = cacheFile();
     try {
-      const fresh = existsSync(CACHE) && Date.now() - statSync(CACHE).mtimeMs < 24 * 3600_000;
-      const list: Instrument[] = fresh ? JSON.parse(readFileSync(CACHE, "utf8")) : await download();
-      if (!fresh) writeFileSync(CACHE, JSON.stringify(list));
+      const fresh = existsSync(file) && (cfg.hosted || Date.now() - statSync(file).mtimeMs < 24 * 3600_000);
+      if (!fresh && cfg.hosted) throw new Error("no instrument master in the build");
+      const list: Instrument[] = fresh ? JSON.parse(readFileSync(file, "utf8")) : await downloadNse();
+      if (!fresh) writeFileSync(file, JSON.stringify(list));
       book.add(list);
       book.source = "upstox";
     } catch (e) {
@@ -72,7 +77,7 @@ export class InstrumentBook {
   }
 }
 
-async function download(): Promise<Instrument[]> {
+export async function downloadNse(): Promise<Instrument[]> {
   const r = await fetch("https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz", {
     headers: { "User-Agent": "upstox-agents-prototype" },
     signal: AbortSignal.timeout(20_000),
@@ -95,7 +100,7 @@ async function download(): Promise<Instrument[]> {
 function fallback(): Instrument[] {
   const out = [...ETFS];
   try {
-    const csv = readFileSync(path.join(DATA, "nifty500.csv"), "utf8").trim().split(/\r?\n/).slice(1);
+    const csv = readFileSync(path.join(dataDir(), "nifty500.csv"), "utf8").trim().split(/\r?\n/).slice(1);
     for (const line of csv) {
       // Company Name,Industry,Symbol,Series,ISIN Code (names never contain commas in this file)
       const [name, , symbol, , isin] = line.split(",");

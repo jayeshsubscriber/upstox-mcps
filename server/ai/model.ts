@@ -3,14 +3,15 @@
  * `ModelClient`, so tests drive the agents with a scripted model.
  */
 import Anthropic from "@anthropic-ai/sdk";
-
-export const MODEL = "claude-opus-5-5";
+import type { ModelId } from "../../shared/types";
 
 export type Msg = Anthropic.Beta.BetaMessageParam;
 export type Reply = Anthropic.Beta.BetaMessage;
 export type ToolDef = Anthropic.Beta.BetaTool;
 
 export interface TurnRequest {
+  /** The person's choice in Settings; Sonnet 5.5 by default. */
+  model: ModelId;
   system: string;
   tools: ToolDef[];
   messages: Msg[];
@@ -33,16 +34,17 @@ export class ClaudeClient implements ModelClient {
   private client: Anthropic | null = null;
 
   async turn(req: TurnRequest, onText?: (delta: string) => void, signal?: AbortSignal): Promise<Reply> {
-    if (!this.available) throw new Error("Claude isn't set up: add ANTHROPIC_API_KEY to .env");
+    if (!this.available) throw new Error("Claude isn't set up on this server (ANTHROPIC_API_KEY)");
     this.client ??= new Anthropic();
     const stream = this.client.beta.messages.stream(
       {
-        model: MODEL,
+        model: req.model,
         max_tokens: req.maxTokens ?? 16000,
         // If a safety classifier declines, retry server-side on the recommended model.
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        // Thinking is always on for this model; effort sets how much (its default is medium).
+        // Both models think adaptively and can't turn it off; effort sets how much. Always set it:
+        // Sonnet 5.5 defaults to high, more than tool-calling chat needs.
         output_config: { effort: req.effort ?? "medium" },
         // System prompt and tools are frozen per agent, so they cache across turns.
         cache_control: { type: "ephemeral" },

@@ -1,23 +1,22 @@
 /**
- * The chat assistant: one conversation, kept in data/chat.json. The API
- * history is append-only; the app shows a simpler list of items (text, tool
- * steps, charts, request cards).
+ * The chat assistant: one conversation per person, kept by the store (a file
+ * locally, Supabase hosted). The API history is append-only; once it gets
+ * long, the oldest questions are dropped whole (at a question boundary, so
+ * what's left is still a valid conversation). The app shows a simpler list of
+ * items (text, tool steps, charts, request cards).
  */
 import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import path from "node:path";
-import type { ChatEvent, ChatItem, ChatPart } from "../../shared/types";
+import type { ChatEvent, ChatItem, ChatPart, ModelId } from "../../shared/types";
+import { BusyError, type ChatStore, type Thread } from "../store/types";
 import { runLoop } from "./loop";
 import type { ModelClient, Msg } from "./model";
 import { ASSISTANT_SYSTEM } from "./prompts";
 import { toolDefs, type ToolCtx } from "./tools";
 
-const FILE = path.resolve(process.cwd(), "data", "chat.json");
-
-interface Thread {
-  messages: Msg[];
-  items: ChatItem[];
-}
+/** History sent to the model: past this many messages, drop the oldest questions down to KEEP_MESSAGES. */
+const MAX_MESSAGES = 80;
+const KEEP_MESSAGES = 40;
+const MAX_ITEMS = 120;
 
 /** "Wed 15 Oct, 9:41 am IST · market open". Goes in the user turn, never the system prompt (keeps the cache). */
 export function nowLine(now = new Date()): string {
@@ -29,69 +28,60 @@ export function nowLine(now = new Date()): string {
   return `${when} IST · market ${open ? "open" : "closed"}`;
 }
 
-export class Assistant {
-  private thread: Thread;
-  busy = false;
+/** Drops the oldest questions (with their answers and tool steps) once the history is long. */
+export function trimHistory(messages: Msg[]): Msg[] {
+  if (messages.length <= MAX_MESSAGES) return messages;
+  for (let i = messages.length - KEEP_MESSAGES; i < messages.length; i++) {
+    // A real question starts a clean cut: a user turn whose content is text, not tool results.
+    if (messages[i].role === "user" && typeof messages[i].content === "string") return messages.slice(i);
+  }
+  return messages;
+}
 
+export class Assistant {
   constructor(
     private model: ModelClient,
     private ctx: () => ToolCtx,
-    private file = FILE,
-  ) {
-    this.thread = this.load();
+    private chat: ChatStore,
+    private modelId: () => ModelId = () => "claude-sonnet-5-5",
+  ) {}
+
+  async load(): Promise<{ items: ChatItem[]; busy: boolean }> {
+    const t = await this.chat.load();
+    return { items: t.items, busy: t.busy };
   }
 
-  private load(): Thread {
-    try {
-      if (existsSync(this.file)) {
-        const t = JSON.parse(readFileSync(this.file, "utf8")) as Thread;
-        if (Array.isArray(t.messages) && Array.isArray(t.items)) return t;
-      }
-    } catch {
-      /* start fresh */
-    }
-    return { messages: [], items: [] };
-  }
-
-  private save() {
-    mkdirSync(path.dirname(this.file), { recursive: true });
-    writeFileSync(`${this.file}.tmp`, JSON.stringify(this.thread));
-    renameSync(`${this.file}.tmp`, this.file);
-  }
-
-  get items() {
-    return this.thread.items;
-  }
-
-  reset() {
-    if (this.busy) throw new Error("Wait for the current answer to finish");
-    this.thread = { messages: [], items: [] };
-    this.save();
+  async reset() {
+    if (!(await this.chat.begin())) throw new BusyError("Wait for the current answer to finish");
+    await this.chat.finish({ messages: [], items: [] });
   }
 
   /** Answers one message, streaming events. Returns the assistant's item. */
   async ask(text: string, emit: (e: ChatEvent) => void, signal?: AbortSignal): Promise<ChatItem> {
-    if (!this.model.available) throw new Error("Claude isn't set up: add ANTHROPIC_API_KEY to .env and restart");
-    if (this.busy) throw new Error("Still answering the last question");
+    if (!this.model.available) throw new Error("Claude isn't set up on this server (ANTHROPIC_API_KEY)");
     const q = text.trim().slice(0, 2000);
     if (!q) throw new Error("Ask something");
-    this.busy = true;
-    const userItem: ChatItem = { id: randomUUID().slice(0, 8), role: "user", at: new Date().toISOString(), parts: [{ type: "text", text: q }] };
-    const item: ChatItem = { id: randomUUID().slice(0, 8), role: "assistant", at: new Date().toISOString(), parts: [] };
-    emit({ type: "start", itemId: item.id });
-    const userMsg: Msg = { role: "user", content: `<context>${nowLine()}</context>\n${q}` };
-    // Parts in the order they happened: text, a tool step, more text…
-    const parts: ChatPart[] = [];
-    const lastText = () => {
-      const p = parts[parts.length - 1];
-      return p?.type === "text" ? p : null;
-    };
+    if (!(await this.chat.begin())) throw new BusyError("Still answering your last question");
+    let saved: Thread | null = null;
     try {
+      const thread = await this.chat.load();
+      const userItem: ChatItem = { id: randomUUID().slice(0, 8), role: "user", at: new Date().toISOString(), parts: [{ type: "text", text: q }] };
+      const item: ChatItem = { id: randomUUID().slice(0, 8), role: "assistant", at: new Date().toISOString(), parts: [] };
+      emit({ type: "start", itemId: item.id });
+      const userMsg: Msg = { role: "user", content: `<context>${nowLine()}</context>\n${q}` };
+      const history = trimHistory([...thread.messages, userMsg]);
+      // Parts in the order they happened: text, a tool step, more text…
+      const parts: ChatPart[] = [];
+      const lastText = () => {
+        const p = parts[parts.length - 1];
+        return p?.type === "text" ? p : null;
+      };
       const res = await runLoop({
         model: this.model,
+        modelId: this.modelId(),
         system: ASSISTANT_SYSTEM,
         tools: toolDefs({ canFile: true }),
-        history: [...this.thread.messages, userMsg],
+        history,
         ctx: this.ctx(),
         canFile: true,
         signal,
@@ -112,14 +102,13 @@ export class Assistant {
       });
       // A declined turn's streamed text is discarded; the app swaps in the final item on "done".
       item.parts = res.ended === "refused" ? [{ type: "text", text: "I can't help with that one. Try asking another way." }] : parts.length ? parts : [{ type: "text", text: res.text }];
-      // Append-only: the user turn and everything the run added.
-      this.thread.messages.push(userMsg, ...res.added);
-      this.thread.items.push(userItem, item);
-      this.save();
+      // Append-only: the question and everything the run added. A declined question isn't kept for the model.
+      const messages = res.ended === "refused" ? thread.messages : [...history, ...res.added];
+      saved = { messages, items: [...thread.items, userItem, item].slice(-MAX_ITEMS) };
       emit({ type: "done", item });
       return item;
     } finally {
-      this.busy = false;
+      await this.chat.finish(saved);
     }
   }
 }

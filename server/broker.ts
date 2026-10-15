@@ -7,10 +7,10 @@
 import { price, qty } from "../shared/format";
 import type { Action, Charges, Holding, Mode, Preview } from "../shared/types";
 import { estimateOrderCharges, isFund } from "./costs";
+import { lastCloses } from "./data";
 import { sideOf, valueOf } from "./mandate";
-import type { MarketData } from "./market";
-import * as upstox from "./upstox";
-import { tokens } from "./upstox";
+import { DemoMarket, type MarketData } from "./market";
+import type { UpstoxClient } from "./upstox";
 import type { InstrumentBook } from "./instruments";
 
 export interface PlaceResult {
@@ -80,14 +80,18 @@ const DEMO_HOLDINGS: { symbol: string; quantity: number; gain: number }[] = [
 ];
 
 export class AccountBroker implements Broker {
-  account: "upstox" | "demo" = tokens.access ? "upstox" : "demo";
-  canSandbox = !!tokens.sandbox;
+  account: "upstox" | "demo";
+  canSandbox: boolean;
   private cache = new Map<string, { at: number; value: unknown }>();
 
   constructor(
+    private upstox: UpstoxClient,
     private market: MarketData,
     private instruments: InstrumentBook,
-  ) {}
+  ) {
+    this.account = upstox.tokens.access ? "upstox" : "demo";
+    this.canSandbox = !!upstox.tokens.sandbox;
+  }
 
   private async cached<T>(key: string, ms: number, fn: () => Promise<T>): Promise<T> {
     const hit = this.cache.get(key);
@@ -99,12 +103,12 @@ export class AccountBroker implements Broker {
 
   async funds() {
     if (this.account === "demo") return DEMO_FUNDS;
-    return this.cached("funds", 60_000, () => upstox.funds().catch(() => null));
+    return this.cached("funds", 60_000, () => this.upstox.funds().catch(() => null));
   }
 
   async holdings(): Promise<Holding[]> {
     if (this.account === "upstox") {
-      return this.cached("holdings", 60_000, () => upstox.holdings().catch((e) => {
+      return this.cached("holdings", 60_000, () => this.upstox.holdings().catch((e) => {
         console.warn(`[broker] holdings: ${(e as Error).message}`);
         return [] as Holding[];
       }));
@@ -114,18 +118,15 @@ export class AccountBroker implements Broker {
       return i ? [{ ...h, name: i.name, instrumentKey: i.key }] : [];
     });
     const prices = await this.market.ltp(rows.map((r) => r.instrumentKey));
-    return rows.map(({ gain, ...r }) => {
+    // Cost prices come from the last real close (not the drifting price), so every server instance agrees.
+    const m = this.market;
+    const closes = m instanceof DemoMarket ? rows.map((r) => m.close(r.instrumentKey) ?? null) : await Promise.all(rows.map((r) => lastCloses(r.instrumentKey).then((c) => c?.close ?? null, () => null)));
+    return rows.map(({ gain, ...r }, i) => {
       const ltp = prices.get(r.instrumentKey) ?? 100;
-      // Fixed on first sight so it doesn't wander with the demo drift.
-      let avg = this.demoAvg.get(r.symbol);
-      if (avg === undefined) {
-        avg = Math.round((ltp / (1 + gain)) * 20) / 20;
-        this.demoAvg.set(r.symbol, avg);
-      }
-      return { ...r, avgPrice: avg, ltp };
+      const base = closes[i] ?? ltp;
+      return { ...r, avgPrice: Math.round((base / (1 + gain)) * 20) / 20, ltp };
     });
   }
-  private demoAvg = new Map<string, number>();
 
   private async charges(action: Action, ltp: number): Promise<Charges> {
     const side = sideOf(action);
@@ -134,7 +135,7 @@ export class AccountBroker implements Broker {
     const unit = value / action.quantity;
     if (this.account === "upstox") {
       try {
-        const c = await upstox.brokerage({ instrumentKey: action.instrumentKey, quantity: action.quantity, product, side, price: +unit.toFixed(2) });
+        const c = await this.upstox.brokerage({ instrumentKey: action.instrumentKey, quantity: action.quantity, product, side, price: +unit.toFixed(2) });
         if (c) return { ...c, source: "upstox" };
       } catch (e) {
         console.warn(`[broker] brokerage API: ${(e as Error).message}; estimating`);
@@ -152,7 +153,7 @@ export class AccountBroker implements Broker {
       let source: "upstox" | "estimate" = "estimate";
       if (this.account === "upstox" && action.kind === "order") {
         try {
-          const m = await upstox.margin({ instrumentKey: action.instrumentKey, quantity: action.quantity, product: action.product, side: "BUY", price: action.orderType === "LIMIT" ? action.price : ltp });
+          const m = await this.upstox.margin({ instrumentKey: action.instrumentKey, quantity: action.quantity, product: action.product, side: "BUY", price: action.orderType === "LIMIT" ? action.price : ltp });
           if (m) {
             required = m;
             source = "upstox";
@@ -168,7 +169,7 @@ export class AccountBroker implements Broker {
 
   async place(action: Action, mode: Mode, ltp: number, tag: string): Promise<PlaceResult> {
     if (mode === "sandbox" && action.kind === "order") {
-      const orderId = await upstox.sandboxPlace({
+      const orderId = await this.upstox.sandboxPlace({
         instrumentKey: action.instrumentKey,
         side: action.side,
         quantity: action.quantity,

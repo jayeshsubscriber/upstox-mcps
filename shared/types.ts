@@ -216,9 +216,14 @@ export interface AuditEvent {
   agentId?: string;
 }
 
+/** The Claude models a user can pick. */
+export type ModelId = "claude-sonnet-5-5" | "claude-opus-5-5";
+
 export interface Settings {
   allPaused: boolean;
   mode: Mode;
+  /** Which Claude model the assistant and agents think with (the server's default when unset). */
+  model?: ModelId;
 }
 
 export interface Connection {
@@ -232,6 +237,8 @@ export interface Connection {
   claude: boolean;
   /** Whether news and fundamentals are available (an Upstox token). */
   research: boolean;
+  /** The name on the connected Upstox account. */
+  accountName?: string;
 }
 
 export interface Holding {
@@ -254,7 +261,13 @@ export interface AppState {
   holdings: Holding[];
   /** Agents checking right now. */
   running: string[];
+  /** When each running agent started, so a check that died is forgotten. */
+  runningSince?: Record<string, string>;
   brief: Brief | null;
+  /** When holdings and funds were last read. */
+  accountAt?: string;
+  /** Presenter control: demo price moves per instrument key, as multipliers. */
+  nudges?: Record<string, number>;
 }
 
 /** What an agent sends to file a request. The server fills in prices, preview and the mandate check. */
@@ -273,3 +286,52 @@ export interface ProposeInput {
 export type ApproveOutcome =
   | { ok: true; request: OrderRequest }
   | { ok: false; reason: "price_moved" | "blocked" | "expired" | "not_pending" | "failed" | "not_found"; message: string; request?: OrderRequest };
+
+// ─── Sign-in and settings ────────────────────────────────────────────────────
+
+export interface Me {
+  /** Who is signed in ("local" when this server doesn't ask for sign-in), or null. */
+  user: string | null;
+  /** Whether this server asks people to sign in. */
+  signIn: boolean;
+  /** Only emails at this domain can sign in. */
+  domain: string;
+  /** Set when the server is missing settings it needs (shown instead of the app). */
+  problems?: string[];
+}
+
+export interface TokenStatus {
+  set: boolean;
+  /** Last 4 characters, to recognise it by. */
+  hint?: string;
+  expiresAt?: string;
+  expired?: boolean;
+  /** "env" when it comes from the server's .env (local runs only). */
+  from?: "you" | "env";
+}
+
+export interface UpstoxStatus {
+  /** Daily login: holdings, funds, real charges and margin. */
+  account: TokenStatus & { name?: string };
+  /** 1-year read-only token: live prices, news, fundamentals. */
+  analytics: TokenStatus;
+  /** 30-day token: approved orders go to Upstox's sandbox. */
+  sandbox: TokenStatus;
+  /** Your Upstox app's API key and secret, for one-tap daily login. */
+  app: { set: boolean; hint?: string };
+  /** The redirect URL to register in the Upstox app. */
+  redirectUrl: string;
+}
+
+export interface UsageLine {
+  used: number;
+  /** 0 = no limit. */
+  limit: number;
+}
+
+export interface SettingsInfo {
+  model: ModelId;
+  models: { id: ModelId; label: string; note: string }[];
+  claude: boolean;
+  usage: { chat: UsageLine; agent: UsageLine; brief: UsageLine };
+}

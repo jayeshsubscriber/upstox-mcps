@@ -1,12 +1,12 @@
 /**
- * The app shell: an Upstox-style phone screen with four tabs. On a laptop the
- * phone sits next to the presenter controls; on a phone those open from the
- * header.
+ * The app shell: sign-in first (when the server asks for it), then an
+ * Upstox-style phone screen with five tabs. On a laptop the phone sits next to
+ * the presenter controls; on a phone those open from the header.
  */
-import { Activity as ActivityIcon, Bot, Home as HomeIcon, Inbox, MessageCircle, SlidersHorizontal } from "lucide-react";
-import { useCallback, useState, type ReactNode } from "react";
-import type { Agent, Mandate, OrderRequest } from "../../shared/types";
-import { api, useAppState } from "./api";
+import { Activity as ActivityIcon, Bot, Home as HomeIcon, Inbox, MessageCircle, Settings as Cog, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import type { Agent, AppState, Mandate, Me, OrderRequest } from "../../shared/types";
+import { api, useAppState, useMe } from "./api";
 import { DemoPanel } from "./components/DemoPanel";
 import { EditSheet } from "./components/EditSheet";
 import { Pill, Sheet, ToastProvider, ToastViewport, cn, useToast } from "./components/ui";
@@ -15,29 +15,78 @@ import { AgentSheet, Agents } from "./screens/Agents";
 import { Approvals, waiting, type ApprovalActions } from "./screens/Approvals";
 import { Ask } from "./screens/Ask";
 import { Home } from "./screens/Home";
+import { Settings } from "./screens/Settings";
+import { SignIn } from "./screens/SignIn";
 
 type Tab = "home" | "ask" | "approvals" | "agents" | "activity";
 
 export default function App() {
   return (
     <ToastProvider>
-      <div className="flex min-h-full items-start justify-center gap-8 lg:py-6">
-        <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-bg lg:h-[min(860px,calc(100dvh-48px))] lg:w-[400px] lg:rounded-[40px] lg:shadow-float lg:ring-8 lg:ring-ink/90">
-          <Phone />
-          <ToastViewport />
-        </div>
-        <DesktopPanel />
-      </div>
+      <Gate />
     </ToastProvider>
   );
 }
 
-/** The presenter panel beside the phone on wide screens. */
-function DesktopPanel() {
-  const { state } = useAppState();
+/** The phone frame (full screen on a phone), with an optional panel beside it on a laptop. */
+function Frame({ children, side }: { children: ReactNode; side?: ReactNode }) {
+  return (
+    <div className="flex min-h-full items-start justify-center gap-8 lg:py-6">
+      <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-bg lg:h-[min(860px,calc(100dvh-48px))] lg:w-[400px] lg:rounded-[40px] lg:shadow-float lg:ring-8 lg:ring-ink/90">
+        {children}
+        <ToastViewport />
+      </div>
+      {side}
+    </div>
+  );
+}
+
+function Center({ children }: { children: ReactNode }) {
+  return <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-2">{children}</div>;
+}
+
+/** Sign-in, a server that isn't set up, or the app. */
+function Gate() {
+  const { me, error, refresh } = useMe();
+  const toast = useToast();
+  if (!me) return <Frame><Center>{error ? `Can't reach the server: ${error}` : "Loading…"}</Center></Frame>;
+  if (me.problems?.length) {
+    return (
+      <Frame>
+        <Center>
+          <span>
+            <b className="block text-ink">This server isn't set up yet</b>
+            <span className="mt-2 block text-[14px]">Missing: {me.problems.join("; ")}. See DEPLOY.md.</span>
+          </span>
+        </Center>
+      </Frame>
+    );
+  }
+  if (!me.user) {
+    return (
+      <Frame>
+        <SignIn
+          domain={me.domain}
+          onDone={(first) => {
+            refresh();
+            toast({ text: first ? "You're in. Your PIN is set for next time." : "Welcome back", tone: "ok" });
+          }}
+        />
+      </Frame>
+    );
+  }
+  return <SignedIn me={me} onSignedOut={refresh} />;
+}
+
+/** One poller for the whole screen; the phone and the presenter panel share it. */
+function SignedIn({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
+  const { state, error } = useAppState();
   const run = useRunner(useToast());
-  if (!state) return null;
-  return <DemoPanel state={state} run={run} className="hidden w-[340px] shrink-0 pt-2 lg:block" />;
+  return (
+    <Frame side={state && <DemoPanel state={state} run={run} className="hidden w-[340px] shrink-0 pt-2 lg:block" />}>
+      {state ? <Phone state={state} error={error} me={me} onSignedOut={onSignedOut} /> : <Center>{error ? `Can't reach the server: ${error}` : "Loading your team…"}</Center>}
+    </Frame>
+  );
 }
 
 /** Runs an action and reports the outcome as a toast in the phone. */
@@ -53,8 +102,7 @@ function useRunner(toast: ReturnType<typeof useToast>) {
   );
 }
 
-function Phone() {
-  const { state, error } = useAppState();
+function Phone({ state, error, me, onSignedOut }: { state: AppState; error: string | null; me: Me; onSignedOut: () => void }) {
   const toast = useToast();
   const run = useRunner(toast);
   const [tab, setTab] = useState<Tab>("home");
@@ -62,7 +110,19 @@ function Phone() {
   const [editing, setEditing] = useState<OrderRequest | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [question, setQuestion] = useState<string | null>(null);
+
+  // Back from Upstox's login page.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const outcome = q.get("upstox");
+    if (!outcome) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    if (outcome === "connected") toast({ text: "Logged in to Upstox. Your real holdings are loading.", tone: "ok" });
+    else toast({ text: q.get("why") ?? "Upstox login didn't finish", tone: "error" });
+    setSettingsOpen(true);
+  }, [toast]);
 
   const mark = (ids: string[], on: boolean) =>
     setBusy((b) => {
@@ -138,10 +198,8 @@ function Phone() {
     }
   };
 
-  if (!state) {
-    return <div className="flex flex-1 items-center justify-center p-8 text-center text-ink-2">{error ? `Can't reach the server: ${error}` : "Loading…"}</div>;
-  }
   const count = waiting(state).filter((r) => r.status === "pending").length;
+  const initial = me.user && me.user !== "local" ? me.user[0].toUpperCase() : null;
 
   return (
     <>
@@ -152,6 +210,9 @@ function Phone() {
         <Pill tone={state.settings.mode === "sandbox" ? "info" : "warn"}>{state.settings.mode === "sandbox" ? "Sandbox" : "Practice"}</Pill>
         <button onClick={() => setDemoOpen(true)} aria-label="Presenter controls" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sunk text-ink-2 lg:hidden">
           <SlidersHorizontal size={17} />
+        </button>
+        <button onClick={() => setSettingsOpen(true)} aria-label="Settings" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-[14px] font-bold text-brand">
+          {initial ?? <Cog size={17} />}
         </button>
       </header>
       {error && <p className="bg-warn/10 px-4 py-1.5 text-center text-[12px] text-warn">{error}</p>}
@@ -201,6 +262,9 @@ function Phone() {
       {agentId && <AgentSheet state={state} agentId={agentId} onClose={() => setAgentId(null)} onSave={saveMandate} onToggle={toggleAgent} onCheck={checkAgent} />}
       <Sheet open={demoOpen} onClose={() => setDemoOpen(false)} title="Presenter controls">
         <DemoPanel state={state} run={run} />
+      </Sheet>
+      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Settings">
+        <Settings me={me} onSignedOut={onSignedOut} />
       </Sheet>
     </>
   );

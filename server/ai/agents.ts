@@ -5,7 +5,7 @@
  * Also the morning brief: Claude's, or one computed from the numbers.
  */
 import { inr, pct } from "../../shared/format";
-import type { Brief } from "../../shared/types";
+import type { Brief, ModelId } from "../../shared/types";
 import { runScenarios, type Scenario } from "../demo";
 import type { ApprovalEngine } from "../engine";
 import { pctChange } from "../indicators";
@@ -19,30 +19,50 @@ import { toolDefs, type ToolCtx } from "./tools";
 
 const SCRIPTED: Record<string, Scenario[]> = { autopilot: ["sip", "blocked"], tax: ["tax"], guard: ["stoploss"], corporate: ["buyback"] };
 
+export interface RunnerOpts {
+  /** The person's chosen model. */
+  modelId?: () => ModelId;
+  /** Asks to spend one Claude run; returns why not (a daily limit) or null. */
+  allow?: (what: "agent" | "brief") => Promise<string | null>;
+}
+
 export class AgentRunner {
+  private modelId: () => ModelId;
+  private allow: (what: "agent" | "brief") => Promise<string | null>;
+
   constructor(
     private model: ModelClient,
     private engine: ApprovalEngine,
     private ctxFor: (agentId: string) => ToolCtx,
     private scripted: { book: InstrumentBook; market: MarketData },
-  ) {}
+    opts: RunnerOpts = {},
+  ) {
+    this.modelId = opts.modelId ?? (() => "claude-sonnet-5-5");
+    this.allow = opts.allow ?? (async () => null);
+  }
 
   /** One agent checks now. Returns how many requests it filed and its note. */
   async run(agentId: string): Promise<{ filed: number; note: string; by: "claude" | "script" }> {
+    await this.engine.refresh();
     const agent = this.engine.agent(agentId);
     if (!agent || agentId === "assistant") throw new Error("No such agent");
     if (agent.status === "paused" || this.engine.state.settings.allPaused) throw new Error(`${agent.name} is paused`);
     if (this.engine.state.running.includes(agentId)) throw new Error(`${agent.name} is already checking`);
+    const thinks = this.model.available && !!AGENT_SYSTEM[agentId];
+    if (thinks) {
+      const no = await this.allow("agent");
+      if (no) throw new Error(no);
+    }
+    if (!(await this.engine.setRunning(agentId, true))) throw new Error(`${agent.name} is already checking`);
     // Agents run side by side, so count only this agent's new requests.
-    const mine = () => this.engine.state.requests.filter((r) => r.agentId === agentId).length;
-    const before = mine();
-    this.engine.setRunning(agentId, true);
+    const before = new Set(this.engine.state.requests.filter((r) => r.agentId === agentId).map((r) => r.id));
     try {
       let note: string;
       let by: "claude" | "script";
-      if (this.model.available && AGENT_SYSTEM[agentId]) {
+      if (thinks) {
         const res = await runLoop({
           model: this.model,
+          modelId: this.modelId(),
           system: AGENT_SYSTEM[agentId],
           tools: toolDefs({ canFile: agent.mandate.actions.length > 0 }),
           history: [{ role: "user", content: `<context>${nowLine()}</context>\nRun your check now.` }],
@@ -56,41 +76,44 @@ export class AgentRunner {
       } else {
         const filed = SCRIPTED[agentId] ? await runScenarios(this.engine, { holdings: await this.ctxFor(agentId).broker.holdings(), ...this.scripted }, SCRIPTED[agentId]) : 0;
         note = filed
-          ? `Filed ${filed} example request${filed > 1 ? "s" : ""} (scripted: add ANTHROPIC_API_KEY so I reason with Claude).`
-          : "Nothing scripted for me yet. Add ANTHROPIC_API_KEY so I can check with Claude.";
+          ? `Filed ${filed} example request${filed > 1 ? "s" : ""} (scripted: Claude isn't set up on this server).`
+          : "Nothing scripted for me yet. I check with Claude once it's set up on this server.";
         by = "script";
       }
-      this.engine.agentNote(agentId, note);
-      return { filed: mine() - before, note, by };
+      await this.engine.agentNote(agentId, note);
+      const filed = this.engine.state.requests.filter((r) => r.agentId === agentId && !before.has(r.id)).length;
+      return { filed, note, by };
     } finally {
-      this.engine.setRunning(agentId, false);
+      await this.engine.setRunning(agentId, false).catch((e) => console.warn(`[agents] ${(e as Error).message}`));
     }
   }
 
   /** Every active agent checks, at the same time. */
   async runAll(): Promise<{ filed: number; ran: number; failed: string[] }> {
+    await this.engine.refresh();
+    if (this.engine.state.settings.allPaused) throw new Error("All agents are paused");
     // The assistant answers questions; it doesn't run checks.
     const ids = this.engine.state.agents.filter((a) => a.id !== "assistant" && a.status === "active" && !this.engine.state.running.includes(a.id)).map((a) => a.id);
-    if (this.engine.state.settings.allPaused) throw new Error("All agents are paused");
     const results = await Promise.allSettled(ids.map((id) => this.run(id)));
     const failed: string[] = [];
     let filed = 0;
-    results.forEach((r, i) => {
+    for (const [i, r] of results.entries()) {
       if (r.status === "fulfilled") filed += r.value.filed;
       else {
         failed.push(ids[i]);
-        this.engine.agentNote(ids[i], `Couldn't finish the check: ${(r.reason as Error).message}`);
+        await this.engine.agentNote(ids[i], `Couldn't finish the check: ${(r.reason as Error).message}`).catch(() => undefined);
       }
-    });
+    }
     return { filed, ran: ids.length, failed };
   }
 
-  /** The morning brief. Claude when set up, else computed from the numbers. */
+  /** The morning brief. Claude when set up (and within today's limit), else computed from the numbers. */
   async brief(): Promise<Brief> {
     const at = new Date().toISOString();
-    if (this.model.available) {
+    if (this.model.available && !(await this.allow("brief"))) {
       const res = await runLoop({
         model: this.model,
+        modelId: this.modelId(),
         system: BRIEF_SYSTEM,
         tools: toolDefs({ canFile: false }),
         history: [{ role: "user", content: `<context>${nowLine()}</context>\nWrite my brief.` }],

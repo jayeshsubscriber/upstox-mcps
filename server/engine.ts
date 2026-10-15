@@ -7,10 +7,14 @@
  *      │          │  └─reject──▶ rejected (undo for a few seconds)
  *      ▼          └─timeout──▶ expired
  *   blocked (outside the mandate; becomes pending again if limits change)
+ *
+ * Locally the engine owns the state in memory and `onChange` saves it. Hosted,
+ * several server instances serve the same person, so every change runs in
+ * `deps.tx`: the person's row is locked, loaded fresh, changed and saved.
  */
 import { randomUUID } from "node:crypto";
 import { inr, monthKey, pct, price, qty } from "../shared/format";
-import type { Action, Agent, AppState, ApproveOutcome, AuditEvent, Mandate, Mode, OrderRequest, ProposeInput, Settings } from "../shared/types";
+import type { Action, Agent, AppState, ApproveOutcome, AuditEvent, Holding, Mandate, Mode, ModelId, OrderRequest, ProposeInput, Settings } from "../shared/types";
 import type { Broker } from "./broker";
 import { practiceCross } from "./broker";
 import { checkMandate, usesBudget, valueOf } from "./mandate";
@@ -23,15 +27,22 @@ export interface EngineDeps {
   now?: () => Date;
   /** Tick size in ₹ for re-pricing (defaults to ₹0.05). */
   tickOf?: (instrumentKey: string) => number | undefined;
-  /** Called after every change (persist, push to the app). */
+  /** Called after every change (persist locally). */
   onChange?: (s: AppState) => void;
+  /** Hosted: runs one change against the freshly loaded, locked state and saves it if the version moved. */
+  tx?: <T>(fn: (fresh: AppState) => Promise<T>) => Promise<T>;
+  /** Hosted: the latest stored state, for reads that mustn't be stale. */
+  load?: () => Promise<AppState>;
 }
 
 const DEFAULT_EXPIRY_MIN: Record<Action["kind"], number> = { order: 15, gtt: 60, tender: 24 * 60 };
 const DEFAULT_BAND_PCT = 0.5;
 /** How long "Undo" on a rejection works. */
 export const UNDO_MS = 10_000;
-const AUDIT_MAX = 2000;
+const AUDIT_MAX = 500;
+/** Decided requests kept once there are this many requests in all (open ones are always kept). */
+const REQUESTS_MAX = 200;
+const DECIDED_KEEP = 150;
 
 export class ApprovalEngine {
   private now: () => Date;
@@ -45,8 +56,43 @@ export class ApprovalEngine {
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
   private changed() {
+    if (this.state.requests.length > REQUESTS_MAX) {
+      // Keeps the stored state small: everything still open, plus the latest decided ones.
+      let decided = 0;
+      this.state.requests = this.state.requests.filter((r) => r.status === "pending" || r.status === "blocked" || r.status === "open" || ++decided <= DECIDED_KEEP);
+    }
     this.state.version++;
     this.deps.onChange?.(this.state);
+  }
+
+  /** Changes in progress (hosted): while one runs, `refresh` must not swap the state under it. */
+  private active = 0;
+
+  /** Every public change goes through here (see the note at the top). */
+  private async tx<T>(fn: () => Promise<T> | T): Promise<T> {
+    if (!this.deps.tx) return fn();
+    return this.deps.tx(async (fresh) => {
+      this.adopt(fresh);
+      this.active++;
+      try {
+        return await fn();
+      } finally {
+        this.active--;
+      }
+    });
+  }
+
+  private adopt(fresh: AppState) {
+    // The connection is worked out per request from the person's tokens, not stored.
+    fresh.connection = this.state.connection;
+    this.state = fresh;
+  }
+
+  /** Re-reads the stored state (hosted); a no-op locally. */
+  async refresh() {
+    if (!this.deps.load || this.active) return;
+    const fresh = await this.deps.load();
+    if (!this.active && fresh.version >= this.state.version) this.adopt(fresh);
   }
 
   private log(e: Omit<AuditEvent, "id" | "at">) {
@@ -121,7 +167,11 @@ export class ApprovalEngine {
 
   // ─── Agents file requests ──────────────────────────────────────────────────
 
-  async propose(input: ProposeInput): Promise<OrderRequest> {
+  propose(input: ProposeInput): Promise<OrderRequest> {
+    return this.tx(() => this.proposeNow(input));
+  }
+
+  private async proposeNow(input: ProposeInput): Promise<OrderRequest> {
     const agent = this.agent(input.agentId);
     if (!agent) throw new Error(`No agent ${input.agentId}`);
     const a = input.action;
@@ -223,7 +273,11 @@ export class ApprovalEngine {
     }
   }
 
-  async approve(id: string): Promise<ApproveOutcome> {
+  approve(id: string): Promise<ApproveOutcome> {
+    return this.tx(() => this.approveNow(id));
+  }
+
+  private async approveNow(id: string): Promise<ApproveOutcome> {
     const r = this.request(id);
     if (!r) return { ok: false, reason: "not_found", message: "No such request" };
     const g = await this.gate(r, 0);
@@ -239,7 +293,11 @@ export class ApprovalEngine {
    * if any one has moved or no longer fits the limits, nothing is placed and
    * the cards update for another look.
    */
-  async approveMany(ids: string[]): Promise<{ ok: boolean; outcomes: ApproveOutcome[]; message: string }> {
+  approveMany(ids: string[]): Promise<{ ok: boolean; outcomes: ApproveOutcome[]; message: string }> {
+    return this.tx(() => this.approveManyNow(ids));
+  }
+
+  private async approveManyNow(ids: string[]): Promise<{ ok: boolean; outcomes: ApproveOutcome[]; message: string }> {
     const rs = ids.map((id) => this.request(id)).filter((r): r is OrderRequest => !!r);
     if (rs.length !== ids.length) return { ok: false, outcomes: [], message: "Some of these requests no longer exist" };
     const spentByAgent = new Map<string, number>();
@@ -265,7 +323,11 @@ export class ApprovalEngine {
     return { ok: failed === 0, outcomes, message: failed ? `${outcomes.length - failed} of ${outcomes.length} placed` : `All ${outcomes.length} approved` };
   }
 
-  reject(id: string, why?: string): OrderRequest {
+  reject(id: string, why?: string): Promise<OrderRequest> {
+    return this.tx(() => this.rejectNow(id, why));
+  }
+
+  private rejectNow(id: string, why?: string): OrderRequest {
     const r = this.request(id);
     if (!r) throw new Error("No such request");
     if (r.status !== "pending" && r.status !== "blocked") throw new Error(`This request is already ${r.status}.`);
@@ -279,7 +341,11 @@ export class ApprovalEngine {
   }
 
   /** Undo a rejection within a few seconds, if the request hasn't expired meanwhile. */
-  restore(id: string): OrderRequest {
+  restore(id: string): Promise<OrderRequest> {
+    return this.tx(() => this.restoreNow(id));
+  }
+
+  private restoreNow(id: string): OrderRequest {
     const r = this.request(id);
     if (!r || r.status !== "rejected" || !r.decidedAt) throw new Error("Nothing to undo");
     const now = this.now().getTime();
@@ -296,7 +362,11 @@ export class ApprovalEngine {
   }
 
   /** Change quantity or price before approving. The card is re-priced and re-checked. */
-  async edit(id: string, ch: { quantity?: number; price?: number }): Promise<OrderRequest> {
+  edit(id: string, ch: { quantity?: number; price?: number }): Promise<OrderRequest> {
+    return this.tx(() => this.editNow(id, ch));
+  }
+
+  private async editNow(id: string, ch: { quantity?: number; price?: number }): Promise<OrderRequest> {
     const r = this.request(id);
     if (!r) throw new Error("No such request");
     if (r.status !== "pending" && r.status !== "blocked") throw new Error(`This request is already ${r.status}.`);
@@ -336,8 +406,28 @@ export class ApprovalEngine {
     this.log({ actor: "system", kind: "expired", requestId: r.id, agentId: r.agentId, text: `Expired, nobody approved it in time: ${r.title}` });
   }
 
-  /** Runs every few seconds: lapses old requests and fills practice orders the price has reached. */
+  /**
+   * Runs every few seconds (hosted: on each look at the state): lapses old
+   * requests and fills practice orders the price has reached. Takes the lock
+   * only when something is due.
+   */
   async sweep(): Promise<void> {
+    if (await this.sweepDue()) await this.tx(() => this.sweepNow());
+  }
+
+  private async sweepDue(): Promise<boolean> {
+    const now = this.now().getTime();
+    if (this.state.requests.some((r) => (r.status === "pending" || r.status === "blocked") && new Date(r.expiresAt).getTime() <= now)) return true;
+    const open = this.state.requests.filter((r) => r.status === "open" && r.result?.simulated);
+    if (!open.length) return false;
+    const prices = await this.deps.market.ltp(open.map((r) => r.action.instrumentKey)).catch(() => new Map<string, number>());
+    return open.some((r) => {
+      const ltp = prices.get(r.action.instrumentKey);
+      return ltp !== undefined && practiceCross(r.action, ltp) !== null;
+    });
+  }
+
+  private async sweepNow(): Promise<void> {
     const now = this.now().getTime();
     let dirty = false;
     for (const r of this.state.requests) {
@@ -365,32 +455,73 @@ export class ApprovalEngine {
 
   // ─── Agent checks ──────────────────────────────────────────────────────────
 
-  setRunning(id: string, on: boolean) {
-    const r = new Set(this.state.running);
-    if (on) r.add(id);
-    else r.delete(id);
-    this.state.running = [...r];
-    this.changed();
+  /** Marks an agent as checking. Returns false if it already is (another tab or server got there first). */
+  setRunning(id: string, on: boolean): Promise<boolean> {
+    return this.tx(async () => {
+      const r = new Set(this.state.running);
+      if (on === r.has(id)) return !on;
+      const since = { ...this.state.runningSince };
+      if (on) {
+        r.add(id);
+        since[id] = this.now().toISOString();
+      } else {
+        r.delete(id);
+        delete since[id];
+      }
+      this.state.running = [...r];
+      this.state.runningSince = since;
+      this.changed();
+      return true;
+    });
   }
 
   /** What an agent says after a check: shown on its card and in Activity. */
-  agentNote(id: string, text: string) {
-    const a = this.agent(id);
-    if (!a) return;
-    a.lastRunAt = this.now().toISOString();
-    a.lastNote = text;
-    this.log({ actor: `agent:${a.id}`, kind: "note", agentId: a.id, text: `${a.name}: ${text}` });
-    this.changed();
+  agentNote(id: string, text: string): Promise<void> {
+    return this.tx(async () => {
+      const a = this.agent(id);
+      if (!a) return;
+      a.lastRunAt = this.now().toISOString();
+      a.lastNote = text;
+      this.log({ actor: `agent:${a.id}`, kind: "note", agentId: a.id, text: `${a.name}: ${text}` });
+      this.changed();
+    });
   }
 
-  setBrief(b: AppState["brief"]) {
-    this.state.brief = b;
-    this.changed();
+  setBrief(b: AppState["brief"]): Promise<void> {
+    return this.tx(async () => {
+      this.state.brief = b;
+      this.changed();
+    });
+  }
+
+  /** Holdings and cash, as last read from the account (or the demo portfolio). */
+  setAccount(funds: number | null, holdings: Holding[]): Promise<void> {
+    return this.tx(async () => {
+      this.state.funds = funds;
+      this.state.holdings = holdings;
+      this.state.accountAt = this.now().toISOString();
+      this.changed();
+    });
+  }
+
+  /** Presenter control: move a demo price by `pctMove`. Returns the new multiplier. */
+  nudge(key: string, pctMove: number): Promise<number> {
+    return this.tx(async () => {
+      const n = { ...this.state.nudges };
+      n[key] = (n[key] ?? 1) * (1 + pctMove / 100);
+      this.state.nudges = n;
+      this.changed();
+      return n[key];
+    });
   }
 
   // ─── Switches and limits ───────────────────────────────────────────────────
 
-  setAgentStatus(id: string, status: Agent["status"]) {
+  setAgentStatus(id: string, status: Agent["status"]): Promise<void> {
+    return this.tx(async () => this.setAgentStatusNow(id, status));
+  }
+
+  private setAgentStatusNow(id: string, status: Agent["status"]) {
     const a = this.agent(id);
     if (!a) throw new Error("No such agent");
     if (a.status === status) return;
@@ -400,7 +531,11 @@ export class ApprovalEngine {
     this.changed();
   }
 
-  setAllPaused(paused: boolean) {
+  setAllPaused(paused: boolean): Promise<void> {
+    return this.tx(async () => this.setAllPausedNow(paused));
+  }
+
+  private setAllPausedNow(paused: boolean) {
     if (this.state.settings.allPaused === paused) return;
     this.state.settings.allPaused = paused;
     this.log({ actor: "user", kind: paused ? "all_paused" : "all_resumed", text: paused ? "You paused all agents. Nothing can be approved until you resume." : "You resumed all agents" });
@@ -408,7 +543,11 @@ export class ApprovalEngine {
     this.changed();
   }
 
-  setMandate(id: string, next: Partial<Mandate>) {
+  setMandate(id: string, next: Partial<Mandate>): Promise<void> {
+    return this.tx(async () => this.setMandateNow(id, next));
+  }
+
+  private setMandateNow(id: string, next: Partial<Mandate>) {
     const a = this.agent(id);
     if (!a) throw new Error("No such agent");
     const before = a.mandate;
@@ -429,21 +568,35 @@ export class ApprovalEngine {
     this.changed();
   }
 
-  setMode(mode: Mode, sandboxAvailable: boolean) {
-    if (mode === "sandbox" && !sandboxAvailable) throw new Error("Set UPSTOX_SANDBOX_TOKEN to use the Upstox sandbox");
-    if (this.state.settings.mode === mode) return;
-    this.state.settings.mode = mode;
-    this.log({ actor: "user", kind: "mode_changed", text: mode === "sandbox" ? "Approved orders now go to Upstox's sandbox (no real money)" : "Approved orders are now practice fills (nothing is sent)" });
-    this.changed();
+  setMode(mode: Mode, sandboxAvailable: boolean): Promise<void> {
+    return this.tx(async () => {
+      if (mode === "sandbox" && !sandboxAvailable) throw new Error("Add your Upstox sandbox token (Settings → Upstox) to use the sandbox");
+      if (this.state.settings.mode === mode) return;
+      this.state.settings.mode = mode;
+      this.log({ actor: "user", kind: "mode_changed", text: mode === "sandbox" ? "Approved orders now go to Upstox's sandbox (no real money)" : "Approved orders are now practice fills (nothing is sent)" });
+      this.changed();
+    });
   }
 
-  reset(settings?: Partial<Settings>) {
-    this.state.agents = defaultAgents(this.now());
-    this.state.requests = [];
-    this.state.audit = [];
-    this.state.settings = { allPaused: false, mode: "practice", ...settings };
-    this.log({ actor: "system", kind: "reset", text: "Demo reset: your team is back to its starting limits" });
-    this.changed();
+  setModel(model: ModelId): Promise<void> {
+    return this.tx(async () => {
+      if (this.state.settings.model === model) return;
+      this.state.settings.model = model;
+      this.changed();
+    });
+  }
+
+  /** Starts the demo over: requests, limits and price moves. Keeps the chosen model. */
+  reset(settings?: Partial<Settings>): Promise<void> {
+    return this.tx(async () => {
+      this.state.agents = defaultAgents(this.now());
+      this.state.requests = [];
+      this.state.audit = [];
+      this.state.nudges = {};
+      this.state.settings = { allPaused: false, mode: "practice", model: this.state.settings.model, ...settings };
+      this.log({ actor: "system", kind: "reset", text: "Demo reset: your team is back to its starting limits" });
+      this.changed();
+    });
   }
 }
 

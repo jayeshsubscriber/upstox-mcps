@@ -1,11 +1,12 @@
 /**
- * Where prices come from: Upstox (with an analytics or access token) or a
- * demo market. The demo market starts from each stock's real last close
- * (Upstox's public candles) and drifts gently around it, so a demo can show
- * "the price moved since the agent proposed this" without a token.
+ * Where prices come from: Upstox (with the person's analytics or access
+ * token) or a demo market. The demo market starts from each stock's real last
+ * close (Upstox's public candles) and drifts gently around it, so a demo can
+ * show "the price moved since the agent proposed this" without a token. The
+ * drift is a function of the clock, so every server instance agrees on it.
  */
 import { lastCloses } from "./data";
-import * as upstox from "./upstox";
+import type { UpstoxClient } from "./upstox";
 
 export interface Quote {
   ltp: number;
@@ -22,11 +23,12 @@ export interface MarketData {
 
 export class UpstoxMarket implements MarketData {
   source = "upstox" as const;
+  constructor(private client: UpstoxClient) {}
   async ltp(keys: string[]) {
-    return upstox.ltp([...new Set(keys)]);
+    return this.client.ltp([...new Set(keys)]);
   }
   async quotes(keys: string[]) {
-    return upstox.ltpQuotes([...new Set(keys)]);
+    return this.client.ltpQuotes([...new Set(keys)]);
   }
 }
 
@@ -42,19 +44,31 @@ const OFFLINE_PRICES: Record<string, number> = {
   BANKBEES: 571.2,
 };
 
+/** Real last close and the one before, per key: shared by every demo market in this process. */
+const SEEDS = new Map<string, { close: number; prevClose: number }>();
+const LOADING = new Map<string, Promise<void>>();
+
 export class DemoMarket implements MarketData {
   source = "demo" as const;
-  /** Real last close and the one before, per key. */
-  private seeds = new Map<string, { close: number; prevClose: number }>();
-  private loading = new Map<string, Promise<void>>();
-  /** Manual nudges (demo control: "move the price"), as a multiplier per key. */
-  private shocks = new Map<string, number>();
+  private seeds = SEEDS;
+  private loading = LOADING;
 
+  /**
+   * `shocks` are the person's manual nudges (presenter control: "move the
+   * price"), as a multiplier per key. They live in the person's state.
+   */
   constructor(
     private symbolOf: (key: string) => string | undefined,
+    private shocks: () => Record<string, number> = () => ({}),
     private now: () => number = Date.now,
     private fetchCloses: typeof lastCloses = lastCloses,
-  ) {}
+  ) {
+    if (fetchCloses !== lastCloses) {
+      // A test's own closes: don't share them.
+      this.seeds = new Map();
+      this.loading = new Map();
+    }
+  }
 
   /** Loads real closes for keys not seen yet (at most 4 s; offline falls back to fixed prices). */
   async warm(keys: string[]) {
@@ -95,16 +109,13 @@ export class DemoMarket implements MarketData {
     for (const c of key) h = (h * 17 + c.charCodeAt(0)) >>> 0;
     // Slow drift within about ±0.3%: inside the default 0.5% band unless nudged.
     const drift = 0.002 * Math.sin(t / 211 + (h % 7)) + 0.001 * Math.sin(t / 37 + (h % 5));
-    const p = this.base(key) * (1 + drift) * (this.shocks.get(key) ?? 1);
+    const p = this.base(key) * (1 + drift) * (this.shocks()[key] ?? 1);
     return Math.round(p * 20) / 20;
   }
 
-  clearNudges() {
-    this.shocks.clear();
-  }
-
-  nudge(key: string, pctMove: number) {
-    this.shocks.set(key, (this.shocks.get(key) ?? 1) * (1 + pctMove / 100));
+  /** The real last close (no drift), once loaded. */
+  close(key: string): number | undefined {
+    return this.seeds.get(key)?.close;
   }
 
   async ltp(keys: string[]) {

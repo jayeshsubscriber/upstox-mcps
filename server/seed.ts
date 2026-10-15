@@ -88,7 +88,9 @@ export function initialState(now: Date): AppState {
     funds: null,
     holdings: [],
     running: [],
+    runningSince: {},
     brief: null,
+    nudges: {},
   };
 }
 
@@ -98,7 +100,11 @@ export function upgradeState(s: AppState, now: Date): AppState {
   const have = new Set(s.agents.map((a) => a.id));
   const missing = defaults.filter((a) => !have.has(a.id));
   if (missing.length) s.agents = [...missing.filter((a) => a.id === "assistant"), ...s.agents, ...missing.filter((a) => a.id !== "assistant")];
-  s.running = [];
+  // A check "running" for 6 minutes died with its server; forget it.
+  const since = s.runningSince ?? {};
+  s.running = (s.running ?? []).filter((id) => since[id] && now.getTime() - Date.parse(since[id]) < 6 * 60_000);
+  s.runningSince = Object.fromEntries(s.running.map((id) => [id, since[id]]));
   s.brief ??= null;
+  s.nudges ??= {};
   return s;
 }

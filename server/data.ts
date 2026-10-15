@@ -2,9 +2,10 @@
  * Market data for the agents. Daily candles come from Upstox's historical API,
  * which answers without a token (custom-screener refreshes from the same
  * public API), so charts and prices are real even in demo mode. News and
- * fundamentals need a token.
+ * fundamentals need the person's Upstox token. The cache is shared: candles,
+ * news and ratios are the same for everyone.
  */
-import { tokens, UpstoxError } from "./upstox";
+import { UpstoxError } from "./upstox";
 
 const API = "https://api.upstox.com";
 
@@ -23,6 +24,7 @@ async function cached<T>(key: string, ms: number, fn: () => Promise<T>): Promise
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < ms) return hit.value as T;
   const value = await fn();
+  if (cache.size > 3000) cache.clear();
   cache.set(key, { at: Date.now(), value });
   return value;
 }
@@ -80,8 +82,6 @@ export async function lastCloses(instrumentKey: string): Promise<{ close: number
 
 // ─── Needs a token ───────────────────────────────────────────────────────────
 
-export const hasDataToken = () => !!(tokens.access ?? tokens.analytics);
-
 export interface NewsItem {
   instrumentKey: string;
   heading: string;
@@ -91,9 +91,8 @@ export interface NewsItem {
 }
 
 /** News from the past 7 days for up to 30 instruments. */
-export async function news(instrumentKeys: string[]): Promise<NewsItem[]> {
-  const token = tokens.access ?? tokens.analytics;
-  if (!token) throw new UpstoxError(401, "NO_TOKEN", "News needs an Upstox token (UPSTOX_ANALYTICS_TOKEN or UPSTOX_ACCESS_TOKEN)");
+export async function news(instrumentKeys: string[], token: string | null): Promise<NewsItem[]> {
+  if (!token) throw new UpstoxError(401, "NO_TOKEN", "News needs an Upstox token");
   const keys = instrumentKeys.slice(0, 30).join(",");
   const j = await cached(`news:${keys}`, 10 * 60_000, () =>
     get<{ data: Record<string, { heading: string; summary: string; article_link: string; published_time: number }[]> }>("/v2/news", token, { category: "instrument_keys", instrument_keys: keys, page_size: "50" }),
@@ -107,8 +106,7 @@ export async function news(instrumentKeys: string[]): Promise<NewsItem[]> {
 
 const isinOf = (key: string) => key.split("|")[1] ?? key;
 
-export async function keyRatios(instrumentKey: string): Promise<{ name: string; company: string; sector: string }[]> {
-  const token = tokens.access ?? tokens.analytics;
+export async function keyRatios(instrumentKey: string, token: string | null): Promise<{ name: string; company: string; sector: string }[]> {
   if (!token) throw new UpstoxError(401, "NO_TOKEN", "Fundamentals need an Upstox token");
   const j = await cached(`ratios:${instrumentKey}`, 6 * 3600_000, () =>
     get<{ data: { name: string; company_value: string; sector_value: string }[] }>(`/v2/fundamentals/${isinOf(instrumentKey)}/key-ratios`, token),
@@ -116,8 +114,10 @@ export async function keyRatios(instrumentKey: string): Promise<{ name: string; 
   return (j.data ?? []).map((r) => ({ name: r.name, company: r.company_value, sector: r.sector_value }));
 }
 
-export async function corporateActions(instrumentKey: string): Promise<{ name: string; date: string; amount: number | null; ratio: string | null; details: Record<string, string> }[]> {
-  const token = tokens.access ?? tokens.analytics;
+export async function corporateActions(
+  instrumentKey: string,
+  token: string | null,
+): Promise<{ name: string; date: string; amount: number | null; ratio: string | null; details: Record<string, string> }[]> {
   if (!token) throw new UpstoxError(401, "NO_TOKEN", "Corporate actions need an Upstox token");
   const j = await cached(`ca:${instrumentKey}`, 6 * 3600_000, () =>
     get<{ data: { name: string; expiry_date: string; amount: number | null; ratio: string | null; event_details: { name: string; value: string }[] }[] }>(

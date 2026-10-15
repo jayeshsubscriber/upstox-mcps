@@ -6,6 +6,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Card } from "../../shared/types";
+import type { ModelId } from "../../shared/types";
 import { isApiError, type ModelClient, type Msg, type ToolDef } from "./model";
 import { runTool, toolLabel, type ToolCtx } from "./tools";
 
@@ -25,6 +26,8 @@ export interface LoopResult {
 
 export async function runLoop(o: {
   model: ModelClient;
+  /** Which Claude model (the person's setting). */
+  modelId: ModelId;
   system: string;
   tools: ToolDef[];
   history: Msg[];
@@ -45,7 +48,7 @@ export async function runLoop(o: {
   for (let turn = 0; turn < maxTurns; turn++) {
     let reply: Anthropic.Beta.BetaMessage;
     try {
-      reply = await o.model.turn({ system: o.system, tools: o.tools, messages: [...o.history, ...added], effort: o.effort }, (d) => emit({ type: "text", delta: d }), o.signal);
+      reply = await o.model.turn({ model: o.modelId, system: o.system, tools: o.tools, messages: [...o.history, ...added], effort: o.effort }, (d) => emit({ type: "text", delta: d }), o.signal);
       badJson = 0;
     } catch (e) {
       // A tool input that couldn't be parsed at all: re-issue the turn (twice at most). API errors go up.

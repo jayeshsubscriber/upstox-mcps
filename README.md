@@ -1,15 +1,18 @@
 # Upstox Agents: prototype
 
 An internal prototype of **a personal team of AI agents inside the Upstox app**.
-It runs on real Upstox data when you give it tokens, and on a demo portfolio at
-real prices when you don't.
+It runs on real Upstox data when you connect Upstox, and on a demo portfolio at
+real prices when you don't. It runs on a laptop for one person, or on Vercel
+for colleagues: each signs in, gets their own team, and connects their own
+Upstox ([DEPLOY.md](DEPLOY.md)).
 
 > **The one rule:** agents never place orders. Each action an agent wants becomes a
 > request card with its numbers and reasons. Only your slide turns it into an order.
 
-**Built so far:** Step 1 (the trust layer and approval flow) and Step 2 (Claude:
-the chat assistant, agents that reason, the morning brief). See
-[docs/PRODUCT.md](docs/PRODUCT.md) for the full plan.
+**Built so far:** Step 1 (the trust layer and approval flow), Step 2 (Claude:
+the chat assistant, agents that reason, the morning brief) and a shared internal
+preview (sign-in, each person's own data and Upstox connection, daily Claude
+limits, Vercel). See [docs/PRODUCT.md](docs/PRODUCT.md) for the full plan.
 
 ## Run it
 
@@ -21,21 +24,27 @@ npm run dev               # app on http://localhost:5173, API on :8787
 
 Or as one process: `npm run build && npm start` → http://localhost:8787
 
+For colleagues: [DEPLOY.md](DEPLOY.md) (Vercel + the Scanners Supabase project).
+
 On a laptop the phone screen sits next to **Presenter controls**: make the agents
 check, run scripted examples, move a price, switch between practice and the Upstox
 sandbox, reset. On a phone, open them from the sliders button in the header.
 
-### What each setting turns on (`.env`)
+### What turns things on
 
-| Variable | What it turns on |
+| Where | What it turns on |
 |---|---|
-| `ANTHROPIC_API_KEY` | **Claude** (`claude-opus-5-5`): chat on the Ask tab, agents that reason before filing, a written brief. Without it, agents run scripted examples and the brief is computed from the numbers |
-| `UPSTOX_ANALYTICS_TOKEN` | Live prices, **news** and **fundamentals** (1-year read-only token) |
-| `UPSTOX_ACCESS_TOKEN` | Your holdings, funds, and charges and margin from Upstox's APIs (daily token) |
-| `UPSTOX_SANDBOX_TOKEN` | "Upstox sandbox" mode: approved orders go to Upstox's sandbox (no real money) |
+| `ANTHROPIC_API_KEY` (server) | **Claude**: chat on the Ask tab, agents that reason before filing, a written brief. Sonnet 5.5 by default (`CLAUDE_MODEL`); each person can switch to Opus 5.5 in Settings. Without a key, agents run scripted examples and the brief is computed from the numbers |
+| Settings → Upstox → Analytics token | Live prices, **news** and **fundamentals** (1-year read-only token) |
+| Settings → Upstox → Log in with Upstox (or paste a token) | Your holdings, funds, charges and margin from Upstox's APIs (daily login, until 03:30 IST) |
+| Settings → Upstox → Sandbox token | "Upstox sandbox" mode: approved orders go to Upstox's sandbox (no real money) |
 
-With nothing set, prices and charts still come from Upstox's public daily candles,
-so the demo portfolio shows real last-close prices.
+Tokens entered in Settings are encrypted on the server and never sent back to the
+browser. On a local run without sign-in, `UPSTOX_*` in `.env` fill whatever
+isn't connected in Settings; hosted, they're ignored.
+
+With nothing connected, prices and charts still come from Upstox's public daily
+candles, so the demo portfolio shows real last-close prices.
 
 **The prototype never calls a live order endpoint.** There's no switch for it, by design.
 
@@ -77,25 +86,37 @@ How the model is used (`server/ai/model.ts`, `loop.ts`):
 ## How it's built
 
 ```
-web/      React + Vite + Tailwind, phone-first (the app and presenter panel)
-server/   Node HTTP API + Server-Sent Events (every open screen updates live)
-  env.ts         loads .env before anything else
+web/      React + Vite + Tailwind, phone-first (sign-in, the app, Settings, presenter panel)
+server/   Node HTTP API; the app polls it every few seconds
+  index.ts       the local server (API + built app)
+  vercel.ts      the same API as one Vercel function
+  app.ts         the routes; every request is answered for one signed-in person
+  desk.ts        one person's desk: their Upstox client, prices, broker, engine, chat, agents
+  auth.ts        sign-in: email domain + access code + personal PIN, signed cookie
+  secrets.ts     each person's Upstox tokens, sealed with AES-256-GCM
+  config.ts      settings from the environment (local or hosted)
+  store/         where state lives: files locally, Supabase hosted (with a lock per person)
   engine.ts      the approval engine: propose → pending → approve / reject / expire
   mandate.ts     the mandate check (pure, tested)
   broker.ts      charges, margin, funds, holdings, practice fills, sandbox orders
-  upstox.ts      Upstox REST client (analytics / daily / sandbox tokens)
-  data.ts        daily candles (public), news and fundamentals (token)
+  upstox.ts      Upstox REST client per person, token checks, daily login (OAuth)
+  data.ts        daily candles (public), news and fundamentals (the person's token)
   indicators.ts  SMA, RSI, drawdown: the numbers agents quote
   market.ts      live Upstox prices, or real last closes with a demo drift you can nudge
-  instruments.ts Upstox's NSE instrument master (cached), Nifty 500 fallback
+  instruments.ts Upstox's NSE instrument master (cached; shipped with the Vercel build)
   demo.ts        scripted agent requests (used without Claude)
   ai/            Claude: model client, tools, loop, prompts, assistant, agent runs and brief
 shared/   types and formatting used by both sides
-test/     engine and AI-layer tests (npm test); the AI tests drive the loop with a scripted model
+supabase/ agents.sql: the table and functions in the Scanners project
+scripts/  build-vercel.ts: the Vercel build (Build Output API)
+test/     engine, AI layer (scripted model) and hosted tests (sign-in, sealing, isolation, concurrency)
 docs/     product plan, Upstox API notes
 ```
 
-State lives in `data/state.json` and the chat in `data/chat.json` (both git-ignored);
+Locally, state lives in `data/state.json` and the chat in `data/chat.json`
+(git-ignored); with sign-in on, each person gets `data/users/<email>/`. Hosted, it
+lives in the Scanners project's `agents_kv` table, one row per person and kind,
+changed under a short lock so several server instances never trample each other.
 "Reset demo" starts the requests and limits over.
 
 ### Reused from `custom-screener`
@@ -110,7 +131,8 @@ State lives in `data/state.json` and the chat in `data/chat.json` (both git-igno
 ## Checks
 
 ```bash
-npm test          # approval engine + AI layer (scripted model): tools, filing, refusals, limits, agent runs, brief
+npm test              # approval engine, AI layer (scripted model), hosted pieces
 npm run typecheck
 npm run build
+npm run vercel-build  # the Vercel output in .vercel/output
 ```

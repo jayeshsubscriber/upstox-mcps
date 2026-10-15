@@ -6,7 +6,7 @@
 import { price } from "../../shared/format";
 import type { AppState, Card, OrderRequest } from "../../shared/types";
 import type { Broker } from "../broker";
-import { corporateActions, dailyCandles, hasDataToken, keyRatios, news, type Candle } from "../data";
+import { corporateActions, dailyCandles, keyRatios, news, type Candle } from "../data";
 import { retitle, type ApprovalEngine } from "../engine";
 import { maxDrawdown, pctChange, rsi, sample, sma } from "../indicators";
 import type { InstrumentBook } from "../instruments";
@@ -21,6 +21,8 @@ export interface ToolCtx {
   book: InstrumentBook;
   /** Whose name requests are filed under ("assistant" in chat, the agent's id in an agent run). */
   agentId: string;
+  /** The person's Upstox token for news and fundamentals, if they connected one. */
+  dataToken: string | null;
 }
 
 export interface ToolOutput {
@@ -215,10 +217,10 @@ const SPECS: Spec[] = [
     required: [],
     label: (i) => (Array.isArray(i.symbols) && i.symbols.length ? `Reading news on ${(i.symbols as string[]).slice(0, 3).join(", ")}` : "Reading news on your holdings"),
     run: async (i, ctx) => {
-      if (!hasDataToken()) return { content: json({ available: false, reason: "News needs an Upstox token, which this demo doesn't have. Say so briefly." }) };
+      if (!ctx.dataToken) return { content: json({ available: false, reason: "News needs an Upstox token, which the user hasn't connected (Settings → Upstox). Say so briefly." }) };
       const syms = Array.isArray(i.symbols) && i.symbols.length ? (i.symbols as string[]) : (await ctx.broker.holdings()).map((h) => h.symbol);
       const keys = syms.flatMap((s) => (resolve(ctx, s) ? [resolve(ctx, s)!.key] : []));
-      const items = await news(keys);
+      const items = await news(keys, ctx.dataToken);
       return {
         content: json({
           items: items.slice(0, 12).map((n) => ({ symbol: ctx.book.byInstrumentKey(n.instrumentKey)?.symbol ?? n.instrumentKey, heading: n.heading, summary: n.summary.slice(0, 300), published: n.publishedAt })),
@@ -235,8 +237,8 @@ const SPECS: Spec[] = [
     run: async (i, ctx) => {
       const inst = resolve(ctx, i.symbol);
       if (!inst) return err(`Unknown NSE symbol ${String(i.symbol)}`);
-      if (!hasDataToken()) return { content: json({ available: false, reason: "Fundamentals need an Upstox token, which this demo doesn't have. Say so briefly." }) };
-      const [ratios, actions] = await Promise.all([keyRatios(inst.key).catch(() => []), corporateActions(inst.key).catch(() => [])]);
+      if (!ctx.dataToken) return { content: json({ available: false, reason: "Fundamentals need an Upstox token, which the user hasn't connected (Settings → Upstox). Say so briefly." }) };
+      const [ratios, actions] = await Promise.all([keyRatios(inst.key, ctx.dataToken).catch(() => []), corporateActions(inst.key, ctx.dataToken).catch(() => [])]);
       return { content: json({ symbol: inst.symbol, name: inst.name, key_ratios: ratios, corporate_actions: actions.slice(0, 8) }) };
     },
   },
@@ -247,6 +249,7 @@ const SPECS: Spec[] = [
     required: [],
     label: () => "Checking your agents and approvals",
     run: async (_i, ctx) => {
+      await ctx.engine.refresh();
       const s: AppState = ctx.engine.state;
       return {
         content: json({

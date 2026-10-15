@@ -118,7 +118,7 @@ export function Home({
 
       {state.holdings.length > 0 && (
         <>
-          <SectionHead title="Your holdings" action={<Pill tone={state.connection.account === "upstox" ? "pos" : "neutral"}>{state.connection.account === "upstox" ? "Your Upstox account" : "Demo portfolio · real prices"}</Pill>} />
+          <SectionHead title="Your holdings" action={<Pill tone={state.connection.account === "upstox" ? "pos" : "neutral"}>{state.connection.account === "upstox" ? state.connection.accountName ?? "Your Upstox account" : "Demo portfolio · real prices"}</Pill>} />
           <Card className="p-4">
             <p className="text-[13px] text-ink-2">Current value</p>
             <p className="num text-[26px] font-bold">{inr(value)}</p>

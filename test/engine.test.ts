@@ -109,7 +109,7 @@ describe("mandates", () => {
     const out = await engine.approve(r.id);
     expect(out.ok).toBe(false);
     expect(broker.placed).toHaveLength(0);
-    engine.setMandate("autopilot", { perOrderMax: 15_000 });
+    await engine.setMandate("autopilot", { perOrderMax: 15_000 });
     expect(r.status).toBe("pending");
   });
 
@@ -127,26 +127,26 @@ describe("mandates", () => {
   });
 
   it("the monthly budget counts approved buys and resets next month", async () => {
-    engine.setMandate("autopilot", { perOrderMax: 20_000 });
+    await engine.setMandate("autopilot", { perOrderMax: 20_000 });
     const a = await engine.propose(sipOrder(50)); // 14,050
     await engine.approve(a.id);
     const b = await engine.propose(sipOrder(30)); // 8,430 > 5,950 left
     expect(b.status).toBe("blocked");
     expect(b.mandate.problems[0]).toMatch(/Only ₹5,950/);
     clock = Date.parse("2026-11-02T05:00:00Z");
-    engine.setMandate("autopilot", {}); // any change re-checks waiting requests
+    await engine.setMandate("autopilot", {}); // any change re-checks waiting requests
     expect(b.status).toBe("pending");
   });
 
   it("pausing an agent or everyone stops approvals until resumed", async () => {
     const r = await engine.propose(taxSell(5));
-    engine.setAgentStatus("tax", "paused");
+    await engine.setAgentStatus("tax", "paused");
     expect(r.status).toBe("blocked");
     expect((await engine.approve(r.id)).ok).toBe(false);
-    engine.setAgentStatus("tax", "active");
-    engine.setAllPaused(true);
+    await engine.setAgentStatus("tax", "active");
+    await engine.setAllPaused(true);
     expect(r.mandate.problems[0]).toMatch(/All agents are paused/);
-    engine.setAllPaused(false);
+    await engine.setAllPaused(false);
     expect((await engine.approve(r.id)).ok).toBe(true);
   });
 
@@ -207,13 +207,13 @@ describe("price, time and edits", () => {
 
   it("a rejection can be undone for a few seconds only", async () => {
     const r = await engine.propose(taxSell(5));
-    engine.reject(r.id);
+    await engine.reject(r.id);
     expect(r.status).toBe("rejected");
-    engine.restore(r.id);
+    await engine.restore(r.id);
     expect(r.status).toBe("pending");
-    engine.reject(r.id);
+    await engine.reject(r.id);
     clock += UNDO_MS + 1;
-    expect(() => engine.restore(r.id)).toThrow(/Too late/);
+    await expect(engine.restore(r.id)).rejects.toThrow(/Too late/);
   });
 });
 

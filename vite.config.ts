@@ -9,7 +9,8 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    proxy: { "/api": { target: `http://localhost:${API_PORT}`, changeOrigin: true } },
+    // xfwd: the API sees the address you opened (for the Upstox redirect URL).
+    proxy: { "/api": { target: `http://localhost:${API_PORT}`, changeOrigin: true, xfwd: true } },
   },
   build: { outDir: "dist", emptyOutDir: true },
 });

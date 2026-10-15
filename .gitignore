@@ -1,10 +1,12 @@
 node_modules
 dist
 web/dist
+.vercel
 .env
 .env.*
 !.env.example
-data/state.json
-data/instruments-nse.json
+# Runtime data (state, chat, keys, instrument cache); only the Nifty 500 list is tracked.
+data/*
+!data/nifty500.csv
 *.log
 .DS_Store

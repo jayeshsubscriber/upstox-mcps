@@ -2,6 +2,7 @@
 import { RotateCcw } from "lucide-react";
 import { useState } from "react";
 import type { AppState, Mode } from "../../../shared/types";
+import { api } from "../api";
 import { Button, Pill, cn } from "./ui";
 
 const SCENARIOS = [
@@ -17,7 +18,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
   const c = state.connection;
   const symbols = [...new Set(state.requests.filter((r) => r.status === "pending" || r.status === "blocked" || r.status === "open").map((r) => r.action.symbol))];
   const sym = symbol && symbols.includes(symbol) ? symbol : symbols[0] ?? "";
-  const setMode = (m: Mode) => run(fetchJson("/api/mode", { mode: m }), m === "sandbox" ? "Approved orders now go to Upstox's sandbox" : "Approved orders are now practice fills");
+  const setMode = (m: Mode) => run(api.setMode(m), m === "sandbox" ? "Approved orders now go to Upstox's sandbox" : "Approved orders are now practice fills");
 
   return (
     <aside className={cn("text-[14px]", className)}>
@@ -26,19 +27,19 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Pill tone={c.claude ? "pos" : "neutral"}>Claude: {c.claude ? "on" : "off"}</Pill>
         <Pill tone={c.market === "upstox" ? "pos" : "neutral"}>Prices: {c.market === "upstox" ? "live from Upstox" : "last close (demo)"}</Pill>
-        <Pill tone={c.account === "upstox" ? "pos" : "neutral"}>Account: {c.account === "upstox" ? "your Upstox" : "demo portfolio"}</Pill>
+        <Pill tone={c.account === "upstox" ? "pos" : "neutral"}>Account: {c.account === "upstox" ? c.accountName ?? "your Upstox" : "demo portfolio"}</Pill>
         <Pill tone={c.research ? "pos" : "neutral"}>News & fundamentals: {c.research ? "on" : "off"}</Pill>
       </div>
 
       <h3 className="mt-5 font-semibold">Make the agents ask</h3>
-      <Button kind="primary" className="mt-2 w-full" disabled={state.running.length > 0} onClick={() => run(fetchJson("/api/agents/run-all", {}), "Your agents checked")}>
+      <Button kind="primary" className="mt-2 w-full" disabled={state.running.length > 0} onClick={() => run(api.runAll(), "Your agents checked")}>
         {state.running.length > 0 ? `Checking (${state.running.length})…` : c.claude ? "All agents check now (Claude)" : "All agents check now"}
       </Button>
-      <p className="mt-1.5 text-[12px] text-ink-3">{c.claude ? "Each agent reasons with Claude under its own limits." : "No ANTHROPIC_API_KEY: agents run the scripted examples below."}</p>
+      <p className="mt-1.5 text-[12px] text-ink-3">{c.claude ? "Each agent reasons with Claude under its own limits." : "Claude isn't set up on this server: agents run the scripted examples below."}</p>
       <p className="mt-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Scripted examples</p>
       <div className="mt-2 space-y-1.5">
         {SCENARIOS.map((s) => (
-          <button key={s.id} onClick={() => run(fetchJson("/api/demo/propose", { scenarios: [s.id] }), "New request filed")} className="w-full rounded-xl bg-card p-2.5 text-left ring-1 ring-line hover:ring-brand/40">
+          <button key={s.id} onClick={() => run(api.demoPropose([s.id]), "New request filed")} className="w-full rounded-xl bg-card p-2.5 text-left ring-1 ring-line hover:ring-brand/40">
             <span className="block font-semibold">{s.label}</span>
             <span className="block text-[12px] text-ink-2">{s.sub}</span>
           </button>
@@ -55,7 +56,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
             Upstox sandbox
           </ModeButton>
         ) : (
-          <span className="flex h-9 items-center justify-center text-center text-[11px] leading-tight text-ink-3">Set UPSTOX_SANDBOX_TOKEN for sandbox</span>
+          <span className="flex h-9 items-center justify-center text-center text-[11px] leading-tight text-ink-3">Add a sandbox token in Settings</span>
         )}
       </div>
       <p className="mt-1.5 text-[12px] text-ink-3">Practice builds the exact order and fills it on paper. Real money is off in this prototype.</p>
@@ -71,7 +72,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
               ))}
             </select>
             {[-3, -1, 1, 3].map((p) => (
-              <button key={p} onClick={() => run(fetchJson("/api/demo/move-price", { symbol: sym, pct: p }), `${sym} moved ${p > 0 ? "+" : ""}${p}%`)} className="h-9 rounded-full bg-card px-2.5 text-[13px] font-semibold ring-1 ring-line">
+              <button key={p} onClick={() => run(api.demoMovePrice(sym, p), `${sym} moved ${p > 0 ? "+" : ""}${p}%`)} className="h-9 rounded-full bg-card px-2.5 text-[13px] font-semibold ring-1 ring-line">
                 {p > 0 ? "+" : ""}
                 {p}%
               </button>
@@ -80,7 +81,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
         </>
       )}
 
-      <Button kind="ghost" className="mt-5" onClick={() => run(fetchJson("/api/demo/reset", {}), "Demo reset")}>
+      <Button kind="ghost" className="mt-5" onClick={() => run(api.demoReset(), "Demo reset")}>
         <RotateCcw size={15} /> Reset demo
       </Button>
 
@@ -107,11 +108,4 @@ function ModeButton({ on, onClick, children }: { on: boolean; onClick: () => voi
       {children}
     </button>
   );
-}
-
-async function fetchJson(url: string, body: unknown) {
-  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error((j as { error?: string }).error ?? `HTTP ${r.status}`);
-  return j;
 }

@@ -14,6 +14,7 @@ import { InstrumentBook } from "../server/instruments";
 import { valueOf } from "../server/mandate";
 import type { MarketData } from "../server/market";
 import { initialState } from "../server/seed";
+import { FileStore } from "../server/store/file";
 
 const INFY = "NSE_EQ|INE009A01021";
 const ITC = "NSE_EQ|INE154A01025";
@@ -83,8 +84,8 @@ function reply(content: Reply["content"], stop: Reply["stop_reason"]): Reply {
 let engine: ApprovalEngine;
 let broker: FakeBroker;
 let market: FakeMarket;
-const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId });
-const tmpFile = () => path.join(mkdtempSync(path.join(tmpdir(), "chat-")), "chat.json");
+const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId, dataToken: null });
+const tmpChat = () => new FileStore(mkdtempSync(path.join(tmpdir(), "chat-"))).chat("local");
 
 beforeEach(() => {
   market = new FakeMarket();
@@ -95,7 +96,7 @@ beforeEach(() => {
 describe("assistant chat", () => {
   it("reads the portfolio with a tool, then answers from the result", async () => {
     const model = new ScriptedModel([[call("get_portfolio", {})], [text("Your portfolio is ₹84,000.")]]);
-    const a = new Assistant(model, () => ctxFor("assistant"), tmpFile());
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
     const events: ChatEvent[] = [];
     const item = await a.ask("How am I doing?", (e) => events.push(e));
     expect(item.parts.map((p) => p.type)).toEqual(["tool", "text"]);
@@ -112,7 +113,7 @@ describe("assistant chat", () => {
 
   it("can only file a request; nothing is placed until the user approves", async () => {
     const model = new ScriptedModel([[call("propose_order", { symbol: "itc", side: "BUY", amount_inr: 5000, reason: "You asked for ₹5,000 of ITC" })], [text("Drafted it. It's waiting in Approvals.")]]);
-    const a = new Assistant(model, () => ctxFor("assistant"), tmpFile());
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
     const item = await a.ask("Buy ₹5000 of ITC", () => {});
     const r = engine.state.requests[0];
     expect(r).toMatchObject({ agentId: "assistant", status: "pending", title: "Buy 12 ITC at ₹400.80" });
@@ -122,7 +123,7 @@ describe("assistant chat", () => {
 
   it("keeps the conversation append-only across questions", async () => {
     const model = new ScriptedModel([[text("One.")], [text("Two.")]]);
-    const a = new Assistant(model, () => ctxFor("assistant"), tmpFile());
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
     await a.ask("first", () => {});
     await a.ask("second", () => {});
     const second = model.seen[1].messages;
@@ -132,7 +133,7 @@ describe("assistant chat", () => {
 
   it("a declined turn shows a plain message and leaves nothing half-done", async () => {
     const model = new ScriptedModel([{ refusal: true }]);
-    const a = new Assistant(model, () => ctxFor("assistant"), tmpFile());
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
     const item = await a.ask("something odd", () => {});
     expect(item.parts).toEqual([{ type: "text", text: "I can't help with that one. Try asking another way." }]);
     expect(engine.state.requests).toHaveLength(0);
@@ -141,7 +142,7 @@ describe("assistant chat", () => {
   it("without Claude set up, it says so instead of guessing", async () => {
     const model = new ScriptedModel([]);
     model.available = false;
-    const a = new Assistant(model, () => ctxFor("assistant"), tmpFile());
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
     await expect(a.ask("hi", () => {})).rejects.toThrow(/ANTHROPIC_API_KEY/);
   });
 });
@@ -149,7 +150,7 @@ describe("assistant chat", () => {
 describe("tool safety", () => {
   it("bad input goes back to the model as an error and runs nothing", async () => {
     const model = new ScriptedModel([[call("propose_order", { symbol: "INFY", side: "HOLD", reason: "x" })], [text("Sorry.")]]);
-    const res = await runLoop({ model, system: "s", tools: toolDefs({ canFile: true }), history: [{ role: "user", content: "go" }], ctx: ctxFor("assistant"), canFile: true });
+    const res = await runLoop({ model, modelId: "claude-sonnet-5-5", system: "s", tools: toolDefs({ canFile: true }), history: [{ role: "user", content: "go" }], ctx: ctxFor("assistant"), canFile: true });
     const result = (res.added[1].content as { is_error?: boolean; content: string }[])[0];
     expect(result.is_error).toBe(true);
     expect(result.content).toMatch(/side must be one of BUY, SELL/);
@@ -159,14 +160,14 @@ describe("tool safety", () => {
   it("an advice-only run has no filing tools, even if the model tries one", async () => {
     expect(toolDefs({ canFile: false }).map((t) => t.name)).not.toContain("propose_order");
     const model = new ScriptedModel([[call("propose_order", { symbol: "INFY", side: "SELL", quantity: 1, reason: "x" })], [text("Noted.")]]);
-    const res = await runLoop({ model, system: "s", tools: toolDefs({ canFile: false }), history: [{ role: "user", content: "go" }], ctx: ctxFor("coach"), canFile: false });
+    const res = await runLoop({ model, modelId: "claude-sonnet-5-5", system: "s", tools: toolDefs({ canFile: false }), history: [{ role: "user", content: "go" }], ctx: ctxFor("coach"), canFile: false });
     expect((res.added[1].content as { content: string }[])[0].content).toMatch(/No tool called propose_order/);
     expect(engine.state.requests).toHaveLength(0);
   });
 
   it("stops after the step limit", async () => {
     const model = new ScriptedModel(Array.from({ length: 5 }, () => [call("get_team", {})]));
-    const res = await runLoop({ model, system: "s", tools: toolDefs({ canFile: false }), history: [{ role: "user", content: "go" }], ctx: ctxFor("assistant"), canFile: false, maxTurns: 3 });
+    const res = await runLoop({ model, modelId: "claude-sonnet-5-5", system: "s", tools: toolDefs({ canFile: false }), history: [{ role: "user", content: "go" }], ctx: ctxFor("assistant"), canFile: false, maxTurns: 3 });
     expect(res.ended).toBe("limit");
   });
 
@@ -207,7 +208,7 @@ describe("agents that think", () => {
   });
 
   it("a paused agent doesn't run", async () => {
-    engine.setAgentStatus("tax", "paused");
+    await engine.setAgentStatus("tax", "paused");
     const runner = new AgentRunner(new ScriptedModel([]), engine, ctxFor, { book, market });
     await expect(runner.run("tax")).rejects.toThrow(/paused/);
   });
