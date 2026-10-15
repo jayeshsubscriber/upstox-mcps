@@ -25,6 +25,13 @@ export function defaultAgents(now: Date): Agent[] {
   });
   return [
     a({
+      id: "assistant",
+      name: "Assistant",
+      job: "Answers your questions and drafts the orders you ask for",
+      icon: "sparkles",
+      mandate: m({ actions: ["order", "gtt"], sides: ["BUY", "SELL"], perOrderMax: 1_00_000, monthlyBudget: 1_00_000 }),
+    }),
+    a({
       id: "autopilot",
       name: "Autopilot",
       job: "Invests your monthly amount and keeps your mix on target",
@@ -77,8 +84,21 @@ export function initialState(now: Date): AppState {
     agents: defaultAgents(now),
     requests: [],
     audit: [],
-    connection: { market: "demo", account: "demo", sandbox: false },
+    connection: { market: "demo", account: "demo", sandbox: false, claude: false, research: false },
     funds: null,
     holdings: [],
+    running: [],
+    brief: null,
   };
+}
+
+/** Brings a saved state from an older version up to date (new agents, new fields). */
+export function upgradeState(s: AppState, now: Date): AppState {
+  const defaults = defaultAgents(now);
+  const have = new Set(s.agents.map((a) => a.id));
+  const missing = defaults.filter((a) => !have.has(a.id));
+  if (missing.length) s.agents = [...missing.filter((a) => a.id === "assistant"), ...s.agents, ...missing.filter((a) => a.id !== "assistant")];
+  s.running = [];
+  s.brief ??= null;
+  return s;
 }

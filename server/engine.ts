@@ -363,6 +363,31 @@ export class ApprovalEngine {
     if (dirty) this.changed();
   }
 
+  // ─── Agent checks ──────────────────────────────────────────────────────────
+
+  setRunning(id: string, on: boolean) {
+    const r = new Set(this.state.running);
+    if (on) r.add(id);
+    else r.delete(id);
+    this.state.running = [...r];
+    this.changed();
+  }
+
+  /** What an agent says after a check: shown on its card and in Activity. */
+  agentNote(id: string, text: string) {
+    const a = this.agent(id);
+    if (!a) return;
+    a.lastRunAt = this.now().toISOString();
+    a.lastNote = text;
+    this.log({ actor: `agent:${a.id}`, kind: "note", agentId: a.id, text: `${a.name}: ${text}` });
+    this.changed();
+  }
+
+  setBrief(b: AppState["brief"]) {
+    this.state.brief = b;
+    this.changed();
+  }
+
   // ─── Switches and limits ───────────────────────────────────────────────────
 
   setAgentStatus(id: string, status: Agent["status"]) {

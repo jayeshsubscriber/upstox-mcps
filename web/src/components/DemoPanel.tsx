@@ -24,14 +24,18 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
       <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Presenter controls · not part of the app</p>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
-        <Pill tone={c.market === "upstox" ? "pos" : "neutral"}>Prices: {c.market === "upstox" ? "live from Upstox" : "demo"}</Pill>
+        <Pill tone={c.claude ? "pos" : "neutral"}>Claude: {c.claude ? "on" : "off"}</Pill>
+        <Pill tone={c.market === "upstox" ? "pos" : "neutral"}>Prices: {c.market === "upstox" ? "live from Upstox" : "last close (demo)"}</Pill>
         <Pill tone={c.account === "upstox" ? "pos" : "neutral"}>Account: {c.account === "upstox" ? "your Upstox" : "demo portfolio"}</Pill>
+        <Pill tone={c.research ? "pos" : "neutral"}>News & fundamentals: {c.research ? "on" : "off"}</Pill>
       </div>
 
       <h3 className="mt-5 font-semibold">Make the agents ask</h3>
-      <Button kind="primary" className="mt-2 w-full" onClick={() => run(fetchJson("/api/demo/propose", {}), "Your agents filed new requests")}>
-        All agents check now
+      <Button kind="primary" className="mt-2 w-full" disabled={state.running.length > 0} onClick={() => run(fetchJson("/api/agents/run-all", {}), "Your agents checked")}>
+        {state.running.length > 0 ? `Checking (${state.running.length})…` : c.claude ? "All agents check now (Claude)" : "All agents check now"}
       </Button>
+      <p className="mt-1.5 text-[12px] text-ink-3">{c.claude ? "Each agent reasons with Claude under its own limits." : "No ANTHROPIC_API_KEY: agents run the scripted examples below."}</p>
+      <p className="mt-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Scripted examples</p>
       <div className="mt-2 space-y-1.5">
         {SCENARIOS.map((s) => (
           <button key={s.id} onClick={() => run(fetchJson("/api/demo/propose", { scenarios: [s.id] }), "New request filed")} className="w-full rounded-xl bg-card p-2.5 text-left ring-1 ring-line hover:ring-brand/40">
@@ -83,6 +87,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
       <details className="mt-4 rounded-xl bg-card p-3 ring-1 ring-line">
         <summary className="cursor-pointer font-semibold">Suggested 3-minute demo</summary>
         <ol className="mt-2 list-decimal space-y-1 pl-5 text-[13px] text-ink-2">
+          <li>Open Home: your brief. Ask "How concentrated am I?" (needs Claude).</li>
           <li>All agents check now. Home shows what needs your OK.</li>
           <li>Approve the SIP with a slide. Watch Autopilot's budget move.</li>
           <li>Approve all three stop-losses in one slide.</li>

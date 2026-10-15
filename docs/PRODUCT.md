@@ -30,9 +30,9 @@ Left out on purpose: turning approvals off, agentic credit cards, 24/7 trading.
 
 | Step | What ships | Status |
 |---|---|---|
-| **1. Trust layer** | Approval cards, slide to approve, batches, price band, expiry, mandates and agent pots, pause one or all, activity log, practice and sandbox execution | **Built (this repo)** |
-| 2. Assistant | Claude-powered chat over holdings, news, fundamentals and charts; morning brief; agents' proposals reasoned by Claude through the same `propose` API | Next |
-| 3. Specialist team | Real tax lots and LTCG/STCG, corporate actions from Upstox Fundamentals, risk watchdog on margin and expiry, trading coach on trade P&L, F&O strategy builder with payoff | |
+| **1. Trust layer** | Approval cards, slide to approve, batches, price band, expiry, mandates and agent pots, pause one or all, activity log, practice and sandbox execution | **Built** |
+| **2. Assistant** | Claude-powered chat over holdings, prices, charts, news and fundamentals; drafted orders as approval cards in the chat; agents that reason with Claude under their own limits and leave a note; morning brief (Claude, or computed from the numbers); real prices from Upstox's public candles even without a token | **Built** |
+| 3. Specialist team | Real tax lots and LTCG/STCG, corporate actions from Upstox Fundamentals, risk watchdog on margin and expiry, trading coach on trade P&L, F&O strategy builder with payoff | Next |
 | 4. Your own agents | Create an agent in plain words; "Watch & propose" rules on live data; reuse custom-screener's rule engine and indicators | |
 | 5. Ecosystem | Agent Apps (data), MCP server with draft-only tools so outside agents file requests here | |
 

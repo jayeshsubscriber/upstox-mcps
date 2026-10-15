@@ -65,14 +65,18 @@ export function practiceCross(action: Action, ltp: number): number | null {
 
 const DEMO_FUNDS = 250_000;
 
-/** Demo portfolio for screens and agent proposals when no account token is set. */
-const DEMO_HOLDINGS: { symbol: string; quantity: number; avgPrice: number }[] = [
-  { symbol: "INFY", quantity: 40, avgPrice: 1180 },
-  { symbol: "HDFCBANK", quantity: 25, avgPrice: 1495 },
-  { symbol: "ITC", quantity: 150, avgPrice: 365 },
-  { symbol: "TCS", quantity: 10, avgPrice: 3610 },
-  { symbol: "RELIANCE", quantity: 30, avgPrice: 1240 },
-  { symbol: "NIFTYBEES", quantity: 200, avgPrice: 251 },
+/**
+ * Demo portfolio for screens and agent proposals when no account token is set.
+ * Buy prices are set from today's real price by `gain` (+0.28 = bought 28%
+ * lower), so the story holds whatever the market did.
+ */
+const DEMO_HOLDINGS: { symbol: string; quantity: number; gain: number }[] = [
+  { symbol: "INFY", quantity: 40, gain: 0.28 },
+  { symbol: "HDFCBANK", quantity: 25, gain: 0.13 },
+  { symbol: "ITC", quantity: 150, gain: 0.12 },
+  { symbol: "TCS", quantity: 10, gain: -0.06 },
+  { symbol: "RELIANCE", quantity: 30, gain: 0.12 },
+  { symbol: "NIFTYBEES", quantity: 200, gain: 0.13 },
 ];
 
 export class AccountBroker implements Broker {
@@ -110,8 +114,18 @@ export class AccountBroker implements Broker {
       return i ? [{ ...h, name: i.name, instrumentKey: i.key }] : [];
     });
     const prices = await this.market.ltp(rows.map((r) => r.instrumentKey));
-    return rows.map((r) => ({ ...r, ltp: prices.get(r.instrumentKey) ?? r.avgPrice }));
+    return rows.map(({ gain, ...r }) => {
+      const ltp = prices.get(r.instrumentKey) ?? 100;
+      // Fixed on first sight so it doesn't wander with the demo drift.
+      let avg = this.demoAvg.get(r.symbol);
+      if (avg === undefined) {
+        avg = Math.round((ltp / (1 + gain)) * 20) / 20;
+        this.demoAvg.set(r.symbol, avg);
+      }
+      return { ...r, avgPrice: avg, ltp };
+    });
   }
+  private demoAvg = new Map<string, number>();
 
   private async charges(action: Action, ltp: number): Promise<Charges> {
     const side = sideOf(action);

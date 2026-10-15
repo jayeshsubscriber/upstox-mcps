@@ -3,11 +3,17 @@
  * Server-Sent Events stream so every open screen updates at once, and the
  * built app in production. No framework; Node's http is enough here.
  */
+import "./env";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import type { AppState, Mandate, Mode, ProposeInput } from "../shared/types";
+import type { AppState, ChatEvent, Mandate, Mode, ProposeInput } from "../shared/types";
+import { AgentRunner } from "./ai/agents";
+import { Assistant } from "./ai/assistant";
+import { ClaudeClient } from "./ai/model";
+import type { ToolCtx } from "./ai/tools";
 import { AccountBroker } from "./broker";
+import { hasDataToken } from "./data";
 import { runScenarios, SCENARIOS, type Scenario } from "./demo";
 import { ApprovalEngine } from "./engine";
 import { InstrumentBook } from "./instruments";
@@ -33,8 +39,13 @@ const engine = new ApprovalEngine(loadState(new Date()), {
     for (const c of clients) c.write(`event: state\ndata: ${s.version}\n\n`);
   },
 });
-engine.state.connection = { market: market.source, account: broker.account, sandbox: broker.canSandbox };
+const claude = new ClaudeClient();
+engine.state.connection = { market: market.source, account: broker.account, sandbox: broker.canSandbox, claude: claude.available, research: hasDataToken() };
 if (engine.state.settings.mode === "sandbox" && !broker.canSandbox) engine.state.settings.mode = "practice";
+
+const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId });
+const assistant = new Assistant(claude, () => ctxFor("assistant"));
+const runner = new AgentRunner(claude, engine, ctxFor, { book, market });
 
 async function refreshAccount() {
   try {
@@ -86,6 +97,22 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/requests\/([\w-]+)\/edit$/, async (req, [id]) => engine.edit(id, await body<{ quantity?: number; price?: number }>(req))],
   ["POST", /^\/api\/agents\/([\w-]+)\/(pause|resume)$/, async (_r, [id, verb]) => engine.setAgentStatus(id, verb === "pause" ? "paused" : "active")],
   ["PUT", /^\/api\/agents\/([\w-]+)\/mandate$/, async (req, [id]) => engine.setMandate(id, await body<Partial<Mandate>>(req))],
+  ["POST", /^\/api\/agents\/run-all$/, async () => runner.runAll()],
+  ["POST", /^\/api\/agents\/([\w-]+)\/run$/, async (_r, [id]) => runner.run(id)],
+  ["GET", /^\/api\/chat$/, async () => ({ items: assistant.items, busy: assistant.busy, claude: claude.available })],
+  ["POST", /^\/api\/chat\/reset$/, async () => assistant.reset()],
+  [
+    "POST",
+    /^\/api\/brief$/,
+    async (req) => {
+      const { ifOlderThanMin } = await body<{ ifOlderThanMin?: number }>(req);
+      const b = engine.state.brief;
+      if (b && ifOlderThanMin && Date.now() - Date.parse(b.at) < ifOlderThanMin * 60_000 && (b.source === "claude" || !claude.available)) return b;
+      const next = await runner.brief();
+      engine.setBrief(next);
+      return next;
+    },
+  ],
   ["POST", /^\/api\/pause-all$/, async (req) => engine.setAllPaused(!!(await body<{ paused: boolean }>(req)).paused)],
   ["POST", /^\/api\/mode$/, async (req) => engine.setMode((await body<{ mode: Mode }>(req)).mode, broker.canSandbox)],
   [
@@ -146,6 +173,7 @@ const server = http.createServer(async (req, res) => {
     });
     return;
   }
+  if (url.pathname === "/api/chat" && req.method === "POST") return chat(req, res);
   if (!url.pathname.startsWith("/api/")) return serveStatic(req, res);
   for (const [method, re, handler] of routes) {
     const m = url.pathname.match(re);
@@ -161,10 +189,34 @@ const server = http.createServer(async (req, res) => {
   send(res, 404, { error: "Not found" });
 });
 
+/** POST /api/chat: answers one message, streamed as Server-Sent Events (one ChatEvent per event). */
+async function chat(req: http.IncomingMessage, res: http.ServerResponse) {
+  let text = "";
+  try {
+    text = (await body<{ text: string }>(req)).text ?? "";
+  } catch (e) {
+    return send(res, 400, { error: (e as Error).message });
+  }
+  if (!claude.available) return send(res, 400, { error: "Claude isn't set up: add ANTHROPIC_API_KEY to .env and restart the server" });
+  if (assistant.busy) return send(res, 409, { error: "Still answering the last question" });
+  res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
+  // If the phone drops the connection, the answer still finishes and is saved (GET /api/chat shows it).
+  const out = (e: ChatEvent) => !res.writableEnded && !res.destroyed && res.write(`data: ${JSON.stringify(e)}\n\n`);
+  try {
+    await assistant.ask(text, out);
+  } catch (e) {
+    console.warn(`[chat] ${(e as Error).message}`);
+    out({ type: "error", message: (e as Error).message });
+  } finally {
+    res.end();
+  }
+}
+
 setInterval(() => void engine.sweep().catch((e) => console.warn(`[sweep] ${(e as Error).message}`)), 3_000);
 setInterval(() => void refreshAccount(), 60_000);
 
 server.listen(PORT, () => {
   console.log(`Upstox agents prototype: http://localhost:${PORT}`);
   console.log(`  prices: ${market.source} · account: ${broker.account} · sandbox: ${broker.canSandbox ? "available" : "off"} · instruments: ${book.source} (${book.size})`);
+  console.log(`  claude: ${claude.available ? "on" : "off (agents run scripted examples; add ANTHROPIC_API_KEY)"} · news & fundamentals: ${hasDataToken() ? "on" : "off (needs an Upstox token)"}`);
 });

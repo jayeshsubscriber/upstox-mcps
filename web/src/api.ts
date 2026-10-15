@@ -1,6 +1,6 @@
 /** Talks to the prototype server. State is pushed over SSE; every screen reads the same snapshot. */
 import { useEffect, useRef, useState } from "react";
-import type { AppState, ApproveOutcome, Mandate, Mode, OrderRequest } from "../../shared/types";
+import type { AppState, ApproveOutcome, Brief, ChatEvent, ChatItem, Mandate, Mode, OrderRequest } from "../../shared/types";
 
 async function call<T>(method: string, url: string, body?: unknown): Promise<T> {
   const r = await fetch(url, {
@@ -26,7 +26,39 @@ export const api = {
   demoPropose: (scenarios?: string[]) => call<{ filed: number }>("POST", "/api/demo/propose", { scenarios }),
   demoMovePrice: (symbol: string, pct: number) => call<{ ltp: number }>("POST", "/api/demo/move-price", { symbol, pct }),
   demoReset: () => call("POST", "/api/demo/reset"),
+  runAgent: (id: string) => call<{ filed: number; note: string; by: "claude" | "script" }>("POST", `/api/agents/${id}/run`),
+  runAll: () => call<{ filed: number; ran: number; failed: string[] }>("POST", "/api/agents/run-all"),
+  brief: (ifOlderThanMin?: number) => call<Brief>("POST", "/api/brief", { ifOlderThanMin }),
+  chat: () => call<{ items: ChatItem[]; busy: boolean; claude: boolean }>("GET", "/api/chat"),
+  chatReset: () => call("POST", "/api/chat/reset"),
 };
+
+/** Sends a question and calls `on` for each streamed event (Server-Sent Events over a POST). */
+export async function askStream(text: string, on: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void> {
+  const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal });
+  if (!r.ok || !r.body) {
+    const j = await r.json().catch(() => ({}));
+    throw new Error((j as { error?: string }).error ?? `HTTP ${r.status}`);
+  }
+  const reader = r.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += value;
+    let i: number;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      const data = chunk
+        .split("\n")
+        .filter((l) => l.startsWith("data: "))
+        .map((l) => l.slice(6))
+        .join("\n");
+      if (data) on(JSON.parse(data) as ChatEvent);
+    }
+  }
+}
 
 /** The live app state: fetched once, then re-fetched whenever the server says it changed. */
 export function useAppState(): { state: AppState | null; error: string | null } {

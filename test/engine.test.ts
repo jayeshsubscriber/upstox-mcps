@@ -19,6 +19,9 @@ class FakeMarket implements MarketData {
   async ltp(keys: string[]) {
     return new Map(keys.filter((k) => this.prices.has(k)).map((k) => [k, this.prices.get(k)!] as const));
   }
+  async quotes(keys: string[]) {
+    return new Map([...(await this.ltp(keys))].map(([k, ltp]) => [k, { ltp }] as const));
+  }
 }
 
 class FakeBroker implements Broker {

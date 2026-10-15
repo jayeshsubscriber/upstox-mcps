@@ -1,5 +1,5 @@
 /** Your team, what each may do, and the one switch that stops them all. */
-import { OctagonPause, Plus, ShieldCheck } from "lucide-react";
+import { Loader2, OctagonPause, Plus, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { inr } from "../../../shared/format";
 import type { ActionKind, Agent, AppState, Mandate, Side } from "../../../shared/types";
@@ -15,8 +15,24 @@ export function describeMandate(a: Agent): string {
   return `${sides} · ${what} · up to ${inr(m.perOrderMax)} each${list}`;
 }
 
-export function Agents({ state, onOpen, onPauseAll, onToggle }: { state: AppState; onOpen: (id: string) => void; onPauseAll: (v: boolean) => void; onToggle: (a: Agent, paused: boolean) => void }) {
+export function Agents({
+  state,
+  onOpen,
+  onPauseAll,
+  onToggle,
+  onCheckAll,
+}: {
+  state: AppState;
+  onOpen: (id: string) => void;
+  onPauseAll: (v: boolean) => void;
+  onToggle: (a: Agent, paused: boolean) => void;
+  onCheck: (a: Agent) => Promise<void>;
+  onCheckAll: () => Promise<void>;
+}) {
   const paused = state.settings.allPaused;
+  const now = useNow(30_000);
+  const [checking, setChecking] = useState(false);
+  const busy = checking || state.running.length > 0;
   const waitingBy = (id: string) => state.requests.filter((r) => r.agentId === id && (r.status === "pending" || r.status === "blocked")).length;
   return (
     <div className="px-4 pb-6">
@@ -38,7 +54,24 @@ export function Agents({ state, onOpen, onPauseAll, onToggle }: { state: AppStat
         </div>
       </Card>
 
-      <SectionHead title="Team" />
+      <SectionHead
+        title="Team"
+        action={
+          <Button
+            size="sm"
+            kind="secondary"
+            disabled={busy || paused}
+            onClick={async () => {
+              setChecking(true);
+              await onCheckAll();
+              setChecking(false);
+            }}
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} {busy ? "Checking…" : "All check now"}
+          </Button>
+        }
+      />
+      <p className="-mt-1 mb-2 px-1 text-[12px] text-ink-3">{state.connection.claude ? "Each agent reasons with Claude, inside its limits." : "Scripted examples. Add ANTHROPIC_API_KEY so agents reason with Claude."}</p>
       <div className="space-y-2.5">
         {state.agents.map((a) => {
           const w = waitingBy(a.id);
@@ -49,14 +82,24 @@ export function Agents({ state, onOpen, onPauseAll, onToggle }: { state: AppStat
                 <button onClick={() => onOpen(a.id)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                   <AgentAvatar agent={a} size={40} />
                   <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 text-[15px] font-bold">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-bold">
                       {a.name}
                       {a.status === "paused" && <Pill>Paused</Pill>}
+                      {state.running.includes(a.id) && (
+                        <Pill tone="brand">
+                          <Loader2 size={12} className="animate-spin" /> Checking
+                        </Pill>
+                      )}
                       {w > 0 && <Pill tone="warn">{w} waiting</Pill>}
                     </p>
                     <p className="mt-0.5 text-[13px] leading-snug text-ink-2">{a.job}</p>
                     <p className="mt-1.5 text-[12px] text-ink-3">{describeMandate(a)}</p>
                     {budget > 0 && <Budget agent={a} />}
+                    {a.lastNote && (
+                      <p className="mt-2 rounded-lg bg-sunk px-2.5 py-2 text-[13px] leading-snug text-ink-2">
+                        “{a.lastNote}” <span className="text-ink-3">· {ago(a.lastRunAt!, now)}</span>
+                      </p>
+                    )}
                   </div>
                 </button>
                 <Switch checked={a.status === "active"} onChange={(on) => onToggle(a, !on)} label={`${a.name} on`} />
@@ -102,7 +145,21 @@ const ACTIONS: { value: ActionKind; label: string; sub: string }[] = [
   { value: "tender", label: "Propose buyback tenders", sub: "Offer shares when a company buys back" },
 ];
 
-export function AgentSheet({ state, agentId, onClose, onSave, onToggle }: { state: AppState; agentId: string | null; onClose: () => void; onSave: (id: string, m: Partial<Mandate>) => Promise<void>; onToggle: (a: Agent, paused: boolean) => void }) {
+export function AgentSheet({
+  state,
+  agentId,
+  onClose,
+  onSave,
+  onToggle,
+  onCheck,
+}: {
+  state: AppState;
+  agentId: string | null;
+  onClose: () => void;
+  onSave: (id: string, m: Partial<Mandate>) => Promise<void>;
+  onToggle: (a: Agent, paused: boolean) => void;
+  onCheck: (a: Agent) => Promise<void>;
+}) {
   const agent = state.agents.find((a) => a.id === agentId) ?? null;
   const now = useNow(10_000);
   const [draft, setDraft] = useState<Mandate | null>(null);
@@ -142,6 +199,26 @@ export function AgentSheet({ state, agentId, onClose, onSave, onToggle }: { stat
         <Stat label="You said no" value={agent.rejected} />
         <Stat label="This month" value={inr(agent.spent)} />
       </div>
+      {agent.id !== "assistant" && (
+        <div className="mt-3">
+          {agent.lastNote && (
+            <p className="rounded-xl bg-sunk p-3 text-[13px] leading-snug text-ink-2">
+              “{agent.lastNote}” <span className="text-ink-3">· {ago(agent.lastRunAt!, now)}</span>
+            </p>
+          )}
+          <Button kind="secondary" className="mt-2 w-full" disabled={state.running.includes(agent.id) || agent.status === "paused" || state.settings.allPaused} onClick={() => void onCheck(agent)}>
+            {state.running.includes(agent.id) ? (
+              <>
+                <Loader2 size={15} className="animate-spin" /> Checking…
+              </>
+            ) : (
+              <>
+                <RefreshCw size={15} /> Ask {agent.name} to check now
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       <SectionHead title="What it may do" />
       <div className="space-y-2">

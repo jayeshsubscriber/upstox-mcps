@@ -151,6 +151,38 @@ export interface Agent {
   approved: number;
   rejected: number;
   builtIn: boolean;
+  /** Last time it checked, and what it said. */
+  lastRunAt?: string;
+  lastNote?: string;
+}
+
+/** Something the app shows next to an answer. */
+export type Card =
+  | { type: "chart"; symbol: string; period: string; points: { d: string; c: number }[]; changePct: number }
+  | { type: "request"; requestId: string };
+
+export type ChatPart = { type: "text"; text: string } | { type: "tool"; label: string; ok: boolean } | { type: "card"; card: Card };
+
+export interface ChatItem {
+  id: string;
+  role: "user" | "assistant";
+  at: string;
+  parts: ChatPart[];
+}
+
+/** Streamed to the app while the assistant answers. */
+export type ChatEvent =
+  | { type: "start"; itemId: string }
+  | { type: "text"; delta: string }
+  | { type: "tool"; label: string }
+  | { type: "tool_done"; label: string; ok: boolean; card?: Card }
+  | { type: "done"; item: ChatItem }
+  | { type: "error"; message: string };
+
+export interface Brief {
+  text: string;
+  source: "claude" | "computed";
+  at: string;
 }
 
 export type Actor = "user" | "system" | `agent:${string}`;
@@ -177,6 +209,7 @@ export interface AuditEvent {
     | "all_resumed"
     | "mandate_changed"
     | "mode_changed"
+    | "note"
     | "reset";
   text: string;
   requestId?: string;
@@ -195,6 +228,10 @@ export interface Connection {
   account: "upstox" | "demo";
   /** Whether sandbox mode is possible (a sandbox token is set). */
   sandbox: boolean;
+  /** Whether Claude is set up (ANTHROPIC_API_KEY); without it agents run scripted examples. */
+  claude: boolean;
+  /** Whether news and fundamentals are available (an Upstox token). */
+  research: boolean;
 }
 
 export interface Holding {
@@ -215,6 +252,9 @@ export interface AppState {
   connection: Connection;
   funds: number | null;
   holdings: Holding[];
+  /** Agents checking right now. */
+  running: string[];
+  brief: Brief | null;
 }
 
 /** What an agent sends to file a request. The server fills in prices, preview and the mandate check. */

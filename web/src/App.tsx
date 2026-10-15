@@ -3,7 +3,7 @@
  * phone sits next to the presenter controls; on a phone those open from the
  * header.
  */
-import { Activity as ActivityIcon, Bot, Home as HomeIcon, Inbox, SlidersHorizontal } from "lucide-react";
+import { Activity as ActivityIcon, Bot, Home as HomeIcon, Inbox, MessageCircle, SlidersHorizontal } from "lucide-react";
 import { useCallback, useState, type ReactNode } from "react";
 import type { Agent, Mandate, OrderRequest } from "../../shared/types";
 import { api, useAppState } from "./api";
@@ -13,9 +13,10 @@ import { Pill, Sheet, ToastProvider, ToastViewport, cn, useToast } from "./compo
 import { Activity } from "./screens/Activity";
 import { AgentSheet, Agents } from "./screens/Agents";
 import { Approvals, waiting, type ApprovalActions } from "./screens/Approvals";
+import { Ask } from "./screens/Ask";
 import { Home } from "./screens/Home";
 
-type Tab = "home" | "approvals" | "agents" | "activity";
+type Tab = "home" | "ask" | "approvals" | "agents" | "activity";
 
 export default function App() {
   return (
@@ -61,6 +62,7 @@ function Phone() {
   const [editing, setEditing] = useState<OrderRequest | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
+  const [question, setQuestion] = useState<string | null>(null);
 
   const mark = (ids: string[], on: boolean) =>
     setBusy((b) => {
@@ -109,6 +111,22 @@ function Phone() {
   };
 
   const toggleAgent = (a: Agent, paused: boolean) => run(api.pauseAgent(a.id, paused), paused ? `${a.name} paused` : `${a.name} resumed`);
+  const checkAgent = async (a: Agent) => {
+    try {
+      const out = await api.runAgent(a.id);
+      toast({ text: out.filed ? `${a.name} filed ${out.filed} request${out.filed > 1 ? "s" : ""} for your OK` : `${a.name}: ${out.note}`, tone: "ok" });
+    } catch (e) {
+      toast({ text: (e as Error).message, tone: "error" });
+    }
+  };
+  const checkAll = async () => {
+    try {
+      const out = await api.runAll();
+      toast({ text: out.filed ? `${out.filed} new request${out.filed > 1 ? "s" : ""} from your agents` : "Your agents checked; nothing needs you", tone: "ok" });
+    } catch (e) {
+      toast({ text: (e as Error).message, tone: "error" });
+    }
+  };
   const pauseAll = (paused: boolean) => run(api.pauseAll(paused), paused ? "All agents paused" : "Agents resumed");
   const saveMandate = async (id: string, m: Partial<Mandate>) => {
     try {
@@ -139,14 +157,27 @@ function Phone() {
       {error && <p className="bg-warn/10 px-4 py-1.5 text-center text-[12px] text-warn">{error}</p>}
 
       <main className="no-scrollbar flex-1 overflow-y-auto">
-        {tab === "home" && <Home state={state} go={setTab} onPauseAll={pauseAll} onPropose={() => run(api.demoPropose(), "Your agents filed new requests")} />}
+        {tab === "home" && (
+          <Home
+            state={state}
+            go={setTab}
+            onPauseAll={pauseAll}
+            onCheckAll={checkAll}
+            onAsk={(q) => {
+              setQuestion(q);
+              setTab("ask");
+            }}
+          />
+        )}
+        {tab === "ask" && <Ask state={state} actions={actions} question={question} onQuestionUsed={() => setQuestion(null)} />}
         {tab === "approvals" && <Approvals state={state} actions={actions} />}
-        {tab === "agents" && <Agents state={state} onOpen={setAgentId} onPauseAll={pauseAll} onToggle={toggleAgent} />}
+        {tab === "agents" && <Agents state={state} onOpen={setAgentId} onPauseAll={pauseAll} onToggle={toggleAgent} onCheck={checkAgent} onCheckAll={checkAll} />}
         {tab === "activity" && <Activity state={state} />}
       </main>
 
-      <nav className="grid shrink-0 grid-cols-4 border-t border-line bg-card pb-[env(safe-area-inset-bottom)]" aria-label="Main">
+      <nav className="grid shrink-0 grid-cols-5 border-t border-line bg-card pb-[env(safe-area-inset-bottom)]" aria-label="Main">
         <TabButton on={tab === "home"} onClick={() => setTab("home")} icon={<HomeIcon size={21} />} label="Home" />
+        <TabButton on={tab === "ask"} onClick={() => setTab("ask")} icon={<MessageCircle size={21} />} label="Ask" />
         <TabButton on={tab === "approvals"} onClick={() => setTab("approvals")} icon={<Inbox size={21} />} label="Approvals" badge={count} />
         <TabButton on={tab === "agents"} onClick={() => setTab("agents")} icon={<Bot size={21} />} label="Agents" />
         <TabButton on={tab === "activity"} onClick={() => setTab("activity")} icon={<ActivityIcon size={21} />} label="Activity" />
@@ -167,7 +198,7 @@ function Phone() {
           }}
         />
       )}
-      {agentId && <AgentSheet state={state} agentId={agentId} onClose={() => setAgentId(null)} onSave={saveMandate} onToggle={toggleAgent} />}
+      {agentId && <AgentSheet state={state} agentId={agentId} onClose={() => setAgentId(null)} onSave={saveMandate} onToggle={toggleAgent} onCheck={checkAgent} />}
       <Sheet open={demoOpen} onClose={() => setDemoOpen(false)} title="Presenter controls">
         <DemoPanel state={state} run={run} />
       </Sheet>
@@ -177,7 +208,12 @@ function Phone() {
 
 function TabButton({ on, onClick, icon, label, badge }: { on: boolean; onClick: () => void; icon: ReactNode; label: string; badge?: number }) {
   return (
-    <button onClick={onClick} aria-current={on ? "page" : undefined} className={cn("relative flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold", on ? "text-brand" : "text-ink-3")}>
+    <button
+      onClick={onClick}
+      aria-current={on ? "page" : undefined}
+      aria-label={badge ? `${label}, ${badge} waiting` : label}
+      className={cn("relative flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-semibold", on ? "text-brand" : "text-ink-3")}
+    >
       <span className="relative">
         {icon}
         {!!badge && (

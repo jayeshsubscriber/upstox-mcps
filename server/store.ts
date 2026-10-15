@@ -2,7 +2,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AppState } from "../shared/types";
-import { initialState } from "./seed";
+import { initialState, upgradeState } from "./seed";
 
 const FILE = path.resolve(process.cwd(), "data", "state.json");
 
@@ -10,7 +10,7 @@ export function loadState(now: Date): AppState {
   try {
     if (existsSync(FILE)) {
       const s = JSON.parse(readFileSync(FILE, "utf8")) as AppState;
-      if (s && Array.isArray(s.agents) && Array.isArray(s.requests)) return s;
+      if (s && Array.isArray(s.agents) && Array.isArray(s.requests)) return upgradeState(s, now);
     }
   } catch (e) {
     console.warn(`[store] couldn't read ${FILE}: ${(e as Error).message}; starting fresh`);

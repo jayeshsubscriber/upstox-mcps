@@ -158,7 +158,7 @@ const STATUS: Record<OrderRequest["status"], { label: string; tone: "pos" | "neg
   expired: { label: "Expired", tone: "neutral" },
 };
 
-function DecidedRow({ r, state, now }: { r: OrderRequest; state: AppState; now: number }) {
+export function DecidedRow({ r, state, now }: { r: OrderRequest; state: AppState; now: number }) {
   const agent = state.agents.find((a) => a.id === r.agentId)!;
   const s = STATUS[r.status];
   const side = sideWord(r);

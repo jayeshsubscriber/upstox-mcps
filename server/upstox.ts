@@ -63,19 +63,26 @@ const marketToken = () => tokens.access ?? tokens.analytics;
 
 // ─── Market data ─────────────────────────────────────────────────────────────
 
-/** Last traded prices keyed by instrument key. Response keys are EXCHANGE:SYMBOL, so map back via instrument_token. */
-export async function ltp(keys: string[]): Promise<Map<string, number>> {
+/**
+ * Last traded price and previous close, keyed by instrument key. Response keys
+ * are EXCHANGE:SYMBOL, so map back via instrument_token.
+ */
+export async function ltpQuotes(keys: string[]): Promise<Map<string, { ltp: number; prevClose?: number }>> {
   const token = marketToken();
-  const out = new Map<string, number>();
+  const out = new Map<string, { ltp: number; prevClose?: number }>();
   if (!token || keys.length === 0) return out;
   for (let i = 0; i < keys.length; i += 400) {
-    const j = await call<{ data: Record<string, { instrument_token: string; last_price: number }> }>("GET", "/v3/market-quote/ltp", {
+    const j = await call<{ data: Record<string, { instrument_token: string; last_price: number; cp?: number }> }>("GET", "/v3/market-quote/ltp", {
       token,
       query: { instrument_key: keys.slice(i, i + 400).join(",") },
     });
-    for (const q of Object.values(j.data ?? {})) if (q?.instrument_token && q.last_price > 0) out.set(q.instrument_token, q.last_price);
+    for (const q of Object.values(j.data ?? {})) if (q?.instrument_token && q.last_price > 0) out.set(q.instrument_token, { ltp: q.last_price, prevClose: q.cp || undefined });
   }
   return out;
+}
+
+export async function ltp(keys: string[]): Promise<Map<string, number>> {
+  return new Map([...(await ltpQuotes(keys))].map(([k, v]) => [k, v.ltp] as const));
 }
 
 // ─── Account (daily access token) ────────────────────────────────────────────
