@@ -55,14 +55,18 @@ export const cfg = {
     const m = env("CLAUDE_MODEL");
     return MODELS.some((x) => x.id === m) ? (m as ModelId) : "claude-sonnet-5-5";
   },
-  /** Daily limits per person (0 = none) and for everyone together. Local runs have none by default. */
+  /** Whether daily Claude limits apply. Off for now (the owner's call); DAILY_LIMITS=on turns them on. */
+  get limitsOn() {
+    return env("DAILY_LIMITS")?.toLowerCase() === "on";
+  },
+  /** Daily limits per person and for everyone together (0 = none). Uses are counted either way. */
   get limits() {
-    const h = this.hosted;
+    if (!this.limitsOn) return { chat: 0, agent: 0, brief: 0, all: 0 };
     return {
-      chat: num("CHAT_DAILY_LIMIT", h ? 40 : 0),
-      agent: num("AGENT_DAILY_LIMIT", h ? 30 : 0),
-      brief: num("BRIEF_DAILY_LIMIT", h ? 12 : 0),
-      all: num("CLAUDE_DAILY_LIMIT_ALL", h ? 1500 : 0),
+      chat: num("CHAT_DAILY_LIMIT", 40),
+      agent: num("AGENT_DAILY_LIMIT", 30),
+      brief: num("BRIEF_DAILY_LIMIT", 12),
+      all: num("CLAUDE_DAILY_LIMIT_ALL", 1500),
     };
   },
   /** Overrides the site's address (for the Upstox redirect URL) when headers can't be trusted. */

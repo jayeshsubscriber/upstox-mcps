@@ -297,3 +297,15 @@ it("the file store keeps people apart on disk", async () => {
   expect((await s.readState("x@upstox.com")).funds).toBe(42);
   expect((await s.readState("y@upstox.com")).funds).toBeNull();
 });
+
+// Daily limits are off unless DAILY_LIMITS=on, whatever the per-limit settings say.
+it("applies daily limits only when they're switched on", async () => {
+  const { cfg } = await import("../server/config");
+  expect(cfg.limits).toEqual({ chat: 0, agent: 0, brief: 0, all: 0 });
+  process.env.DAILY_LIMITS = "on";
+  try {
+    expect(cfg.limits).toEqual({ chat: 2, agent: 30, brief: 12, all: 1500 });
+  } finally {
+    delete process.env.DAILY_LIMITS;
+  }
+});

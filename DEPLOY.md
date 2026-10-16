@@ -3,8 +3,8 @@
 One shared link. Each colleague signs in with their **@upstox.com email**, the
 **access code** you send them, and a **6-digit PIN** they pick the first time.
 Each person gets their own agents, approvals, chat and activity, and connects
-**their own Upstox** in Settings. One shared Claude key pays for everyone, with
-daily limits per person.
+**their own Upstox** in Settings. One shared Claude key pays for everyone (daily
+limits per person are built in but off for now).
 
 ```
 phone / laptop ──▶ Vercel (Mumbai, bom1)
@@ -12,7 +12,7 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
                     └─ /api/* one Node function ──▶ Supabase "Scanners" (Mumbai)
                                                  │    agents_kv: state, chat, sealed tokens, PINs, usage
                                                  ├─▶ Upstox APIs (each person's own tokens)
-                                                 └─▶ Claude API (one shared key, daily limits)
+                                                 └─▶ Claude API (one shared key)
 ```
 
 ## What's already done
@@ -61,8 +61,9 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
 | `ANTHROPIC_API_KEY` | The shared Claude key. Make it **inside a workspace** in the Claude Console (Settings → Workspaces → a workspace → API keys) |
 | `ANTHROPIC_WORKSPACE_ID` | Only for a key that isn't tied to a workspace: the workspace's ID (`wrkspc_…`), sent with every Claude request |
 | `CLAUDE_MODEL` | Default model: `claude-sonnet-5-5` (each person can switch to Opus 5.5 in Settings) |
-| `CHAT_DAILY_LIMIT`, `AGENT_DAILY_LIMIT`, `BRIEF_DAILY_LIMIT` | Per person per day (defaults 40, 30, 12; 0 = no limit) |
-| `CLAUDE_DAILY_LIMIT_ALL` | All Claude runs per day, everyone together (default 1500) |
+| `DAILY_LIMITS` | `on` turns on the daily Claude limits below. **Off for now**: uses are still counted and shown in Settings |
+| `CHAT_DAILY_LIMIT`, `AGENT_DAILY_LIMIT`, `BRIEF_DAILY_LIMIT` | With limits on: per person per day (defaults 40, 30, 12; 0 = no limit) |
+| `CLAUDE_DAILY_LIMIT_ALL` | With limits on: all Claude runs per day, everyone together (default 1500) |
 | `PUBLIC_URL` | Optional: your address, if Upstox must redirect to a custom domain |
 
 To read the server key again: Supabase → SQL Editor →
@@ -89,14 +90,14 @@ prices, with practice fills.
   browser, and used only for their owner. Anyone who can read the Vercel project's
   environment variables *and* the database could decrypt them.
 - **A short access code like `Upstox` is easy to guess.** Anyone who guesses it can sign in
-  with any @upstox.com address and use that person's share of the daily Claude limits
-  (they can't see anyone else's data: each account has its own PIN).
+  with any @upstox.com address and use Claude on the shared key (they can't see anyone
+  else's data: each account has its own PIN).
 - **The access code doesn't prove who you are.** Whoever first signs in with an email
   sets its PIN. Fine among colleagues; a real product signs in with Upstox.
 - **Claude cost**: roughly ₹4–10 per question on Sonnet 5.5 and about twice that on
-  Opus 5.5 (estimates: it depends on how many tools a question needs). The daily limits
-  cap any one person at a few hundred rupees a day; your spend limit in the Anthropic
-  console caps the total.
+  Opus 5.5 (estimates: it depends on how many tools a question needs). With daily limits
+  off, **your spend limit in the Anthropic console is the only cap**, so set one.
+  `DAILY_LIMITS=on` caps each person at a few hundred rupees a day.
 - **Polling, not live push**: the app asks the server for changes every 3 seconds
   while it's open.
 
@@ -139,7 +140,7 @@ AGENTS_HOSTED=1 <the env vars> npm start   # the same code path as Vercel, on ht
 |---|---|
 | "This server isn't set up yet. Missing: …" | Add those variables in Vercel → Settings → Environment Variables, then Redeploy |
 | Upstox login says the redirect URL is wrong (`UDAPI100068`/`UDAPI100070`) | The app's Redirect URL in Upstox My Apps must match Settings exactly, `https://` included |
-| "That's all 40 questions for today" | The daily limit; raise `CHAT_DAILY_LIMIT` if you want |
+| "That's all 40 questions for today" | Daily limits are on (`DAILY_LIMITS=on`); raise `CHAT_DAILY_LIMIT`, or remove `DAILY_LIMITS` |
 | A preview link asks for a Vercel login | Use the production address (from `main`) |
 | Chat says Claude isn't set up | `ANTHROPIC_API_KEY` is missing; add it and redeploy |
 | "The Claude API key on this server isn't tied to a workspace" | Make a new key inside a workspace in the Claude Console and replace `ANTHROPIC_API_KEY`, or add `ANTHROPIC_WORKSPACE_ID` with that workspace's ID. Then redeploy |

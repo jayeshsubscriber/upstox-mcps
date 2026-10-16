@@ -37,7 +37,7 @@ don't build the same thing or edit the same files at once. Remove the row once i
 |---|---|---|
 | 1. Trust layer | Approval cards, slide to approve, batches (all or nothing, sells first), 0.5% price band with re-pricing on the tick, expiry, per-agent mandates and monthly pots, pause one or all, Undo, edit, activity log, practice fills and Upstox sandbox | Built |
 | 2. Assistant | Claude chat (Ask tab) with tools over holdings, prices, charts, news and fundamentals; drafted orders appear as cards; agents that reason with Claude under their own mandate and leave a note; morning brief | Built |
-| 2½. Shared preview | Sign-in (work email + access code + 6-digit PIN), each person's own state, Upstox connection in Settings (encrypted), one Claude key with daily limits, model switch, Supabase storage, Vercel hosting | Built and deployed |
+| 2½. Shared preview | Sign-in (work email + access code + 6-digit PIN), each person's own state, Upstox connection in Settings (encrypted), one Claude key (daily limits built in, off for now), model switch, Supabase storage, Vercel hosting | Built and deployed |
 | 3. Specialist team on real data | Real tax lots, corporate actions, risk watchdog, trading coach, F&O builder | **Next** |
 | 4. Your own agents | "Create an agent" and "Watch & propose" rules | Later |
 | 5. Ecosystem | MCP server with draft-only tools, Agent Apps | Later |
@@ -91,7 +91,7 @@ phone / laptop ──▶ Vercel, Mumbai (bom1)
                     └─ /api/* → one Node function (server/vercel.ts → server/app.ts)
                           ├─▶ Supabase "Scanners" (Mumbai): public.agents_kv via agents_* RPCs
                           ├─▶ Upstox APIs, with that person's own tokens
-                          └─▶ Claude API, one shared key, daily limits
+                          └─▶ Claude API, one shared key
 ```
 
 - **Per request:** `app.ts` works out who's asking from the signed cookie (or "local"
@@ -110,9 +110,11 @@ phone / laptop ──▶ Vercel, Mumbai (bom1)
 - **Chat** streams as Server-Sent Events over a POST. The "still answering" flag is
   a 5-minute lock on the person's chat row; leaving the screen doesn't cancel an answer.
   History is append-only and is trimmed at question boundaries past 80 messages.
-- **Limits:** `store.use()` counts Claude uses per person per IST day (chat 40,
-  agent checks 30, briefs 12) and for everyone together (1,500). Over the limit, chat
-  refuses, agent checks fail with a note, and the brief falls back to the computed one.
+- **Limits:** **off for now** (the owner's call); `DAILY_LIMITS=on` turns them on.
+  `store.use()` always counts Claude uses per person per IST day, and Settings shows
+  them. With limits on: chat 40, agent checks 30, briefs 12 per person, 1,500 for
+  everyone together. Over a limit, chat refuses, agent checks fail with a note, and the
+  brief falls back to the computed one. Uses that got no answer are given back.
 - **Sign-in:** `@upstox.com` email + `APP_ACCESS_CODE` (currently "Upstox", not
   case-sensitive) + a PIN set on first sign-in (scrypt). Five wrong PINs lock the
   account for 15 min. The session is a signed cookie lasting `SESSION_HOURS` (2) from
@@ -253,4 +255,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `9bc15de` | Sign-ins last 2 hours; access code not case-sensitive |
 | `13017a2` | Handover docs |
 | `3d2eb50` | Claude errors in plain words; brief falls back when Claude fails; `ANTHROPIC_WORKSPACE_ID` |
-| (next) | Failed Claude uses don't count; brief notes the daily limit; migration `agents_prototype_refund` |
+| `83fb2a0` | Failed Claude uses don't count; brief notes the daily limit; migration `agents_prototype_refund` |
+| (next) | Daily limits off unless `DAILY_LIMITS=on` (the owner's call, 16 Oct 2026) |

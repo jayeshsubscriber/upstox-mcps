@@ -94,7 +94,11 @@ export function Settings({ me, onSignedOut }: { me: Me; onSignedOut: () => void 
             <UseRow label="Agent checks with Claude" u={info.usage.agent} />
             <UseRow label="Written briefs" u={info.usage.brief} />
           </Card>
-          <p className="mt-1.5 px-1 text-[12px] text-ink-3">Limits reset at midnight IST. One shared Claude key pays for everyone, so each person gets a daily allowance.</p>
+          <p className="mt-1.5 px-1 text-[12px] text-ink-3">
+            {info.usage.chat.limit || info.usage.agent.limit || info.usage.brief.limit
+              ? "Limits reset at midnight IST. One shared Claude key pays for everyone, so each person gets a daily allowance."
+              : "What you've used today. There are no daily limits for now."}
+          </p>
         </>
       )}
 
