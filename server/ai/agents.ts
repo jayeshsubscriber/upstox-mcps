@@ -13,7 +13,7 @@ import type { InstrumentBook } from "../instruments";
 import type { MarketData } from "../market";
 import { nowLine } from "./assistant";
 import { runLoop } from "./loop";
-import type { ModelClient } from "./model";
+import { ClaudeError, type ModelClient } from "./model";
 import { AGENT_SYSTEM, BRIEF_SYSTEM } from "./prompts";
 import { toolDefs, type ToolCtx } from "./tools";
 
@@ -107,24 +107,34 @@ export class AgentRunner {
     return { filed, ran: ids.length, failed };
   }
 
-  /** The morning brief. Claude when set up (and within today's limit), else computed from the numbers. */
+  /** The morning brief. Claude when set up (and within today's limit), else computed from the numbers, with a note if Claude failed. */
   async brief(): Promise<Brief> {
     const at = new Date().toISOString();
+    let note: string | undefined;
     if (this.model.available && !(await this.allow("brief"))) {
-      const res = await runLoop({
-        model: this.model,
-        modelId: this.modelId(),
-        system: BRIEF_SYSTEM,
-        tools: toolDefs({ canFile: false }),
-        history: [{ role: "user", content: `<context>${nowLine()}</context>\nWrite my brief.` }],
-        ctx: this.ctxFor("assistant"),
-        canFile: false,
-        effort: "low",
-        maxTurns: 6,
-      });
-      return { text: res.text.trim(), source: "claude", at };
+      try {
+        return await this.claudeBrief(at);
+      } catch (e) {
+        if (!(e instanceof ClaudeError)) throw e;
+        note = `Claude couldn't write today's brief, so this one is from your numbers. ${e.message}`;
+      }
     }
-    return { text: await computedBrief(this.ctxFor("assistant"), this.engine), source: "computed", at };
+    return { text: await computedBrief(this.ctxFor("assistant"), this.engine), source: "computed", at, ...(note ? { note } : {}) };
+  }
+
+  private async claudeBrief(at: string): Promise<Brief> {
+    const res = await runLoop({
+      model: this.model,
+      modelId: this.modelId(),
+      system: BRIEF_SYSTEM,
+      tools: toolDefs({ canFile: false }),
+      history: [{ role: "user", content: `<context>${nowLine()}</context>\nWrite my brief.` }],
+      ctx: this.ctxFor("assistant"),
+      canFile: false,
+      effort: "low",
+      maxTurns: 6,
+    });
+    return { text: res.text.trim(), source: "claude", at };
   }
 }
 

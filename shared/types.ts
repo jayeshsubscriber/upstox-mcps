@@ -183,6 +183,8 @@ export interface Brief {
   text: string;
   source: "claude" | "computed";
   at: string;
+  /** Why it's computed when Claude was meant to write it. */
+  note?: string;
 }
 
 export type Actor = "user" | "system" | `agent:${string}`;

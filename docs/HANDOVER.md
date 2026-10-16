@@ -70,9 +70,11 @@ Tools the model can call (`server/ai/tools.ts`): `get_portfolio`, `get_quotes`,
   set up yet" only because the environment variables weren't there yet.
 
 **Not verified yet (do these first)**
-- **No real Claude call has been made.** The build session had no API key. Answer
-  quality, cost per question, and whether answers stay on the "information, not advice"
-  side are unknown. Suggested check: 20 real questions on Sonnet 5.5 vs Opus 5.5.
+- **No real Claude answer has come back yet.** The build session had no API key. On
+  Vercel, the first key was refused because it isn't tied to a workspace; the app now
+  says so in plain words and accepts `ANTHROPIC_WORKSPACE_ID`. Answer quality, cost per
+  question, and whether answers stay on the "information, not advice" side are still
+  unknown. Suggested check: 20 real questions on Sonnet 5.5 vs Opus 5.5.
 - **Upstox daily login with a real Upstox app:** the code exchange and token save after
   Upstox redirects back.
 - **Real holdings through a real access token**, and the analytics token's success path
@@ -227,6 +229,11 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
     `fallbacks: "default"`), with top-level `cache_control`.
   - System prompts are frozen strings, and the date goes in the user turn so the cache
     holds.
+  - API failures become a `ClaudeError` with plain words (`plainClaudeError`). The loop
+    never retries those as bad tool input, and the brief falls back to the computed one
+    with a note.
+  - A key that isn't scoped to a workspace needs the `anthropic-workspace-id` header on
+    every request (`ANTHROPIC_WORKSPACE_ID`).
   - A refused turn isn't kept in history.
 - **Agent shells in cloud sessions:**
   - `pkill -f <pattern>` can kill your own shell; kill by process id instead.
@@ -241,3 +248,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `f08e599` | Shared preview on Vercel: sign-in, per-person Upstox, daily Claude limits |
 | `5cf3ca9` | Setup screen says where to add missing settings |
 | `9bc15de` | Sign-ins last 2 hours; access code not case-sensitive |
+| `13017a2` | Handover docs |
+| (next) | Claude errors in plain words; brief falls back when Claude fails; `ANTHROPIC_WORKSPACE_ID` |

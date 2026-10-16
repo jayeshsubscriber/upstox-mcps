@@ -209,6 +209,7 @@ function BriefCard({ state }: { state: AppState }) {
         </button>
       </div>
       {b ? <Markdown text={b.text} className="text-[14px]" /> : <p className="text-[14px] text-ink-3">{loading ? "Writing your brief…" : failed ?? "No brief yet."}</p>}
+      {b?.note && <p className="mt-2 text-[12px] text-warn">{b.note}</p>}
       {failed && b && <p className="mt-2 text-[12px] text-warn">Couldn't refresh: {failed}</p>}
     </Card>
   );

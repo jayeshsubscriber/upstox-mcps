@@ -57,7 +57,8 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | The Scanners project's address and public key. The key alone opens nothing here |
 | `AGENTS_DB_KEY` | This app's server key for the `agents_*` functions (the Vault secret `agents_server_key`) |
 | `ALLOWED_EMAIL_DOMAIN` | `upstox.com` |
-| `ANTHROPIC_API_KEY` | The shared Claude key |
+| `ANTHROPIC_API_KEY` | The shared Claude key. Make it **inside a workspace** in the Claude Console (Settings → Workspaces → a workspace → API keys) |
+| `ANTHROPIC_WORKSPACE_ID` | Only for a key that isn't tied to a workspace: the workspace's ID (`wrkspc_…`), sent with every Claude request |
 | `CLAUDE_MODEL` | Default model: `claude-sonnet-5-5` (each person can switch to Opus 5.5 in Settings) |
 | `CHAT_DAILY_LIMIT`, `AGENT_DAILY_LIMIT`, `BRIEF_DAILY_LIMIT` | Per person per day (defaults 40, 30, 12; 0 = no limit) |
 | `CLAUDE_DAILY_LIMIT_ALL` | All Claude runs per day, everyone together (default 1500) |
@@ -140,3 +141,4 @@ AGENTS_HOSTED=1 <the env vars> npm start   # the same code path as Vercel, on ht
 | "That's all 40 questions for today" | The daily limit; raise `CHAT_DAILY_LIMIT` if you want |
 | A preview link asks for a Vercel login | Use the production address (from `main`) |
 | Chat says Claude isn't set up | `ANTHROPIC_API_KEY` is missing; add it and redeploy |
+| "The Claude API key on this server isn't tied to a workspace" | Make a new key inside a workspace in the Claude Console and replace `ANTHROPIC_API_KEY`, or add `ANTHROPIC_WORKSPACE_ID` with that workspace's ID. Then redeploy |
