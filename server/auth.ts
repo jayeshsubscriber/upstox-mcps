@@ -2,8 +2,8 @@
  * Sign-in for a shared internal build: a work email at the allowed domain, the
  * access code everyone was given, and a personal 6-digit PIN chosen on the
  * first sign-in (so nobody else can open your account with the code alone).
- * The session is a signed cookie that lasts SESSION_HOURS (2 by default) from
- * sign-in; nothing about it is stored.
+ * The session is a signed cookie that lasts until you sign out (or
+ * SESSION_HOURS from sign-in, when set); nothing about it is stored.
  *
  * Limits worth knowing: the code doesn't prove you own the email, so whoever
  * signs in first with an address sets its PIN. Fine for a prototype among
@@ -67,9 +67,10 @@ export function verify<T extends Record<string, unknown>>(token: string | undefi
 const secure = (req: http.IncomingMessage) => String(req.headers["x-forwarded-proto"] ?? "").startsWith("https") || cfg.hosted;
 
 export function sessionCookie(req: http.IncomingMessage, user: string): string {
-  const hours = cfg.sessionHours;
-  const v = sign({ u: user }, hours * 3_600_000);
-  return `${COOKIE}=${v}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${hours * 3_600}${secure(req) ? "; Secure" : ""}`;
+  // "Until you sign out" is as long as browsers keep a cookie: 400 days.
+  const ms = cfg.sessionHours > 0 ? cfg.sessionHours * 3_600_000 : 400 * 86_400_000;
+  const v = sign({ u: user }, ms);
+  return `${COOKIE}=${v}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${ms / 1000}${secure(req) ? "; Secure" : ""}`;
 }
 
 export function clearSessionCookie(req: http.IncomingMessage): string {

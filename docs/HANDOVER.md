@@ -117,8 +117,9 @@ phone / laptop ──▶ Vercel, Mumbai (bom1)
   brief falls back to the computed one. Uses that got no answer are given back.
 - **Sign-in:** `@upstox.com` email + `APP_ACCESS_CODE` (currently "Upstox", not
   case-sensitive) + a PIN set on first sign-in (scrypt). Five wrong PINs lock the
-  account for 15 min. The session is a signed cookie lasting `SESSION_HOURS` (2) from
-  sign-in.
+  account for 15 min. The session is a signed cookie that lasts until sign-out while
+  testing (the owner's call, 16 Oct 2026); `SESSION_HOURS` makes it expire that many
+  hours after sign-in.
 - **Upstox in Settings:**
   - Daily login: the person's own Upstox app (API key + secret saved sealed) through
     OAuth to `/api/upstox/callback`, which expires at 03:30 IST.
@@ -256,4 +257,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `13017a2` | Handover docs |
 | `3d2eb50` | Claude errors in plain words; brief falls back when Claude fails; `ANTHROPIC_WORKSPACE_ID` |
 | `83fb2a0` | Failed Claude uses don't count; brief notes the daily limit; migration `agents_prototype_refund` |
-| (next) | Daily limits off unless `DAILY_LIMITS=on` (the owner's call, 16 Oct 2026) |
+| `f26b99b` | Daily limits off unless `DAILY_LIMITS=on` (the owner's call, 16 Oct 2026) |
+| (next) | Sign-ins last until sign-out unless `SESSION_HOURS` is set |

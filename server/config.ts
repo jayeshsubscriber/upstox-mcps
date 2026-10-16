@@ -29,9 +29,9 @@ export const cfg = {
   get signIn() {
     return !!this.accessCode;
   },
-  /** How long a sign-in lasts, counted from when you signed in. */
+  /** How long a sign-in lasts, in hours from signing in. 0 (the default while testing) = until you sign out. */
   get sessionHours() {
-    return Math.max(1, num("SESSION_HOURS", 2));
+    return num("SESSION_HOURS", 0);
   },
   /** Signs session cookies and the Upstox login state. */
   get sessionSecret() {

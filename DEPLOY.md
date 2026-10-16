@@ -52,7 +52,7 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
 | Variable | What it is |
 |---|---|
 | `APP_ACCESS_CODE` | The code everyone types to sign in (not case-sensitive). Change it to stop new sign-ins |
-| `SESSION_HOURS` | How long a sign-in lasts, from the moment you sign in (default 2). Then the app asks for email, code and PIN again |
+| `SESSION_HOURS` | Leave it out while testing: people stay signed in until they sign out. Set a number of hours to make sign-ins expire that long after signing in |
 | `SESSION_SECRET` | Signs the sign-in cookie. Change it to sign everyone out |
 | `SECRETS_KEY` | Encrypts each person's Upstox tokens. **Changing it makes saved tokens unreadable** (people reconnect) |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | The Scanners project's address and public key. The key alone opens nothing here |
