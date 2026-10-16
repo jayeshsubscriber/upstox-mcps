@@ -37,8 +37,10 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
    sets them).
 4. **Environment variables.** Before you press Deploy, open *Environment Variables*
    and paste the block from the env file Claude made for you (it has fresh secrets and the
-   database keys; Vercel accepts a whole `.env` block pasted into the first field).
-   Then add `ANTHROPIC_API_KEY` yourself.
+   database keys; Vercel accepts a whole `.env` block pasted into the Key field and
+   splits it into rows). Then add `ANTHROPIC_API_KEY` yourself. They must apply to
+   **Production**. Added them after deploying? Redeploy (Deployments → ⋯ → Redeploy):
+   new settings only reach new deployments.
 5. **Deploy.** When it's done, open `https://<project>.vercel.app`, sign in with your
    own email, the access code and a PIN of your choice.
 6. **Share** the link and the access code with colleagues (privately; the code is the

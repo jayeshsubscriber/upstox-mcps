@@ -56,7 +56,10 @@ function Gate() {
         <Center>
           <span>
             <b className="block text-ink">This server isn't set up yet</b>
-            <span className="mt-2 block text-[14px]">Missing: {me.problems.join("; ")}. See DEPLOY.md.</span>
+            <span className="mt-2 block text-[14px]">Missing: {me.problems.join("; ")}.</span>
+            <span className="mt-3 block text-[14px]">
+              Add them in Vercel → your project → Settings → Environment Variables, for Production, then redeploy (Deployments → ⋯ → Redeploy). New settings only reach new deployments.
+            </span>
           </span>
         </Center>
       </Frame>
