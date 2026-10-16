@@ -228,6 +228,10 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
   - System prompts are frozen strings, and the date goes in the user turn so the cache
     holds.
   - A refused turn isn't kept in history.
+  - Old tool results stay in the chat history, and the model will happily reuse them.
+    After someone connected Upstox, the chat kept answering from the demo portfolio.
+    So each question's `<context>` says where the data comes from, flags a change,
+    and the prompt says to call the tools again for every number.
 - **Agent shells in cloud sessions:**
   - `pkill -f <pattern>` can kill your own shell; kill by process id instead.
   - Playwright's browser is at `/opt/pw-browsers/chromium`.

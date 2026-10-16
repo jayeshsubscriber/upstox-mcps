@@ -38,7 +38,7 @@ class FakeMarket implements MarketData {
 }
 
 class FakeBroker implements Broker {
-  account = "demo" as const;
+  account: "upstox" | "demo" = "demo";
   canSandbox = false;
   placed: Action[] = [];
   async preview(action: Action, ltp: number): Promise<Preview> {
@@ -107,8 +107,21 @@ describe("assistant chat", () => {
     expect(portfolio.total_value).toBe(84_000);
     expect(portfolio.holdings[0]).toMatchObject({ symbol: "INFY", share_of_portfolio_pct: 52.38 });
     // The date goes in the user turn, never the (cached) system prompt.
-    expect(model.seen[0].messages[0].content).toMatch(/^<context>.* IST · market (open|closed)<\/context>\nHow am I doing\?$/);
+    expect(model.seen[0].messages[0].content).toMatch(/^<context>.* IST · market (open|closed) · data: a demo portfolio, demo prices<\/context>\nHow am I doing\?$/);
     expect(model.seen[0].system).not.toMatch(/\d{4}/);
+  });
+
+  it("says when the data source changed, so earlier demo figures aren't reused", async () => {
+    const model = new ScriptedModel([[text("Demo answer.")], [text("Real answer.")], [text("Again.")]]);
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
+    await a.ask("first", () => {});
+    broker.account = "upstox";
+    await a.ask("second", () => {});
+    await a.ask("third", () => {});
+    const q = (i: number) => model.seen[i].messages.at(-1)!.content as string;
+    expect(q(0)).not.toMatch(/changed/);
+    expect(q(1)).toMatch(/· data: your Upstox account, demo prices\. This changed since the earlier questions in this chat, so figures from those answers are out of date<\/context>\nsecond$/);
+    expect(q(2)).toMatch(/· data: your Upstox account, demo prices<\/context>\nthird$/);
   });
 
   it("can only file a request; nothing is placed until the user approves", async () => {

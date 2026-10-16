@@ -206,6 +206,8 @@ function UpstoxSection({ up, setUp }: { up: UpstoxStatus; setUp: (s: UpstoxStatu
       <TokenCard
         title="Live prices, news and fundamentals"
         sub="Your 1-year read-only Analytics token (My Apps → Analytics)."
+        // Your login also reads prices, news and fundamentals, so the card shouldn't say "Not set" while it lasts.
+        covered={live && !(up.analytics.set && !up.analytics.expired) ? `On through your Upstox login${until(a)}. To keep them on after that, add your 1-year read-only Analytics token (My Apps → Analytics).` : undefined}
         t={up.analytics}
         open={open === "analytics"}
         busy={busy === "analytics"}
@@ -249,18 +251,22 @@ function UpstoxSection({ up, setUp }: { up: UpstoxStatus; setUp: (s: UpstoxStatu
   );
 }
 
-function TokenCard(p: { title: string; sub: string; t: TokenStatus; open: boolean; busy: boolean; onOpen: () => void; onCancel: () => void; onSave: (t: string) => void; onRemove: () => void }) {
+function TokenCard(p: { title: string; sub: string; covered?: string; t: TokenStatus; open: boolean; busy: boolean; onOpen: () => void; onCancel: () => void; onSave: (t: string) => void; onRemove: () => void }) {
   return (
     <Card className="p-4">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[15px] font-semibold">{p.title}</p>
           <p className="text-[13px] text-ink-2">
-            {p.t.set && !p.t.expired ? `Token ${p.t.hint}${until(p.t)}. ` : ""}
-            {p.sub}
+            {p.covered ?? (
+              <>
+                {p.t.set && !p.t.expired ? `Token ${p.t.hint}${until(p.t)}. ` : ""}
+                {p.sub}
+              </>
+            )}
           </p>
         </div>
-        <StatusPill t={p.t} />
+        {p.covered ? <Pill tone="pos">On</Pill> : <StatusPill t={p.t} />}
       </div>
       {p.open ? (
         <TokenForm label="Token" busy={p.busy} onSave={p.onSave} onCancel={p.onCancel} />
