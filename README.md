@@ -6,6 +6,9 @@ real prices when you don't. It runs on a laptop for one person, or on Vercel
 for colleagues: each signs in, gets their own team, and connects their own
 Upstox ([DEPLOY.md](DEPLOY.md)).
 
+**Picking this up?** Start with [docs/HANDOVER.md](docs/HANDOVER.md) (state, setup, working from two
+laptops, what's next) and [docs/STRATEGY.md](docs/STRATEGY.md) (the product thinking). Agents also get [CLAUDE.md](CLAUDE.md).
+
 > **The one rule:** agents never place orders. Each action an agent wants becomes a
 > request card with its numbers and reasons. Only your slide turns it into an order.
 
@@ -110,7 +113,7 @@ shared/   types and formatting used by both sides
 supabase/ agents.sql: the table and functions in the Scanners project
 scripts/  build-vercel.ts: the Vercel build (Build Output API)
 test/     engine, AI layer (scripted model) and hosted tests (sign-in, sealing, isolation, concurrency)
-docs/     product plan, Upstox API notes
+docs/     handover, strategy, product plan, Upstox API notes
 ```
 
 Locally, state lives in `data/state.json` and the chat in `data/chat.json`
