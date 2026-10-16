@@ -1,5 +1,8 @@
 /** Claude API failures reach people as plain words, and the brief still appears when Claude can't write it. */
 import Anthropic from "@anthropic-ai/sdk";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AgentRunner } from "../server/ai/agents";
 import { runLoop } from "../server/ai/loop";
@@ -11,6 +14,7 @@ import { InstrumentBook } from "../server/instruments";
 import { valueOf } from "../server/mandate";
 import type { MarketData } from "../server/market";
 import { initialState } from "../server/seed";
+import { FileStore } from "../server/store/file";
 
 const body = (type: string, message: string) => ({ type: "error", error: { type, message } });
 const err = (status: number, type: string, message: string) => Anthropic.APIError.generate(status, body(type, message), undefined, new Headers());
@@ -67,9 +71,35 @@ describe("the brief when Claude fails", () => {
       },
     };
     const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId, dataToken: null });
-    const brief = await new AgentRunner(failing, engine, ctxFor, { book, market }).brief();
+    const refunded: string[] = [];
+    const runner = new AgentRunner(failing, engine, ctxFor, { book, market }, { refund: async (w) => void refunded.push(w) });
+    const brief = await runner.brief();
     expect(brief.source).toBe("computed");
     expect(brief.text).toMatch(/^Your portfolio is \*\*₹11,000\*\*/);
     expect(brief.note).toMatch(/isn't tied to a workspace/);
+    // A failed attempt doesn't use up the day's briefs.
+    expect(refunded).toEqual(["brief"]);
+
+    // Past today's limit: no Claude call at all, and the note says why.
+    let called = false;
+    const limited = new AgentRunner({ available: true, turn: async () => ((called = true), Promise.reject(new Error("unused"))) }, engine, ctxFor, { book, market }, {
+      allow: async () => "That's all 12 written briefs for today. It resets at midnight IST.",
+    });
+    const b2 = await limited.brief();
+    expect(called).toBe(false);
+    expect(b2.note).toMatch(/^That's all 12 written briefs for today\. .*from your numbers/);
+  });
+});
+
+describe("usage that got no answer", () => {
+  it("is given back, never below zero", async () => {
+    const store = new FileStore(mkdtempSync(path.join(tmpdir(), "use-")));
+    await store.use("r@upstox.com", "chat", 40, 0);
+    await store.use("r@upstox.com", "chat", 40, 0);
+    await store.refund("r@upstox.com", "chat");
+    expect(await store.usage("r@upstox.com")).toEqual({ chat: 1 });
+    await store.refund("r@upstox.com", "chat");
+    await store.refund("r@upstox.com", "chat");
+    expect(await store.usage("r@upstox.com")).toEqual({ chat: 0 });
   });
 });

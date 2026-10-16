@@ -75,7 +75,9 @@ const routes: [string, RegExp, Handler][] = [
     async ({ req, desk, S }) => {
       const { ifOlderThanMin } = await body<{ ifOlderThanMin?: number }>(req);
       const b = desk.engine.state.brief;
-      if (b && ifOlderThanMin && Date.now() - Date.parse(b.at) < ifOlderThanMin * 60_000 && (b.source === "claude" || !S.claude.available)) return b;
+      // A recent brief stands, unless it's a computed one that Claude could now improve on. One with a note
+      // (Claude failed, or today's limit is used) waits out the interval too, rather than retrying on every visit.
+      if (b && ifOlderThanMin && Date.now() - Date.parse(b.at) < ifOlderThanMin * 60_000 && (b.source === "claude" || !S.claude.available || b.note)) return b;
       const next = await desk.runner.brief();
       await desk.engine.setBrief(next);
       return next;
@@ -235,6 +237,8 @@ async function chat(req: http.IncomingMessage, res: http.ServerResponse, desk: D
   try {
     await desk.assistant.ask(text, out);
   } catch (e) {
+    // No answer: the question doesn't count against today's limit.
+    await desk.refund("chat");
     console.warn(`[chat] ${(e as Error).message}`);
     out({ type: "error", message: (e as Error).message });
   } finally {

@@ -131,7 +131,7 @@ phone / laptop ──▶ Vercel, Mumbai (bom1)
 |---|---|---|
 | Code | github.com/jayeshsubscriber/upstox-mcps | `main` = live. `step-2-claude` is identical to `main` and no longer needed |
 | Hosting | Vercel, the owner's account, project importing this repo | Build: `npm run vercel-build` (Build Output API). Function in bom1, 300 s max. Env changes need a **redeploy**. Preview links are behind Vercel login |
-| Database | Supabase project "Scanners", ref `bvxsqcoprnggxlpqkmcz`, ap-south-1 | Shared with `custom-screener`. Ours: table `public.agents_kv`, functions `agents_get/put/lock/unlock/use` (migration `agents_prototype_kv`, source `supabase/agents.sql`), Vault secret `agents_server_key` |
+| Database | Supabase project "Scanners", ref `bvxsqcoprnggxlpqkmcz`, ap-south-1 | Shared with `custom-screener`. Ours: table `public.agents_kv`, functions `agents_get/put/lock/unlock/use/refund` (migrations `agents_prototype_kv`, `agents_prototype_refund`; source `supabase/agents.sql`), Vault secret `agents_server_key` |
 | Secrets | Vercel env vars + a file the owner keeps | Names in `DEPLOY.md` and `.env.example`. Ask the owner for values; never commit them |
 | Claude key | Vercel env `ANTHROPIC_API_KEY` | The owner's Anthropic account; set a spend limit there |
 | Related repo | github.com/jayeshsubscriber/custom-screener | The owner's screener and algo app. Its `main` auto-deploys to Vercel **and a trading VPS**, so don't push there. Code reused from it is listed in the README |
@@ -232,6 +232,9 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
   - API failures become a `ClaudeError` with plain words (`plainClaudeError`). The loop
     never retries those as bad tool input, and the brief falls back to the computed one
     with a note.
+  - A Claude use that got no answer is given back (`store.refund`, RPC `agents_refund`),
+    so a broken key doesn't use up the day's limits. A computed brief with a note waits
+    30 minutes before trying Claude again (the refresh button always retries).
   - A key that isn't scoped to a workspace needs the `anthropic-workspace-id` header on
     every request (`ANTHROPIC_WORKSPACE_ID`).
   - A refused turn isn't kept in history.
@@ -249,4 +252,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `5cf3ca9` | Setup screen says where to add missing settings |
 | `9bc15de` | Sign-ins last 2 hours; access code not case-sensitive |
 | `13017a2` | Handover docs |
-| (next) | Claude errors in plain words; brief falls back when Claude fails; `ANTHROPIC_WORKSPACE_ID` |
+| `3d2eb50` | Claude errors in plain words; brief falls back when Claude fails; `ANTHROPIC_WORKSPACE_ID` |
+| (next) | Failed Claude uses don't count; brief notes the daily limit; migration `agents_prototype_refund` |

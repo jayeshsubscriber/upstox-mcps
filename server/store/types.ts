@@ -50,6 +50,8 @@ export interface Store {
    * 0 means no limit.
    */
   use(user: string, what: string, limit: number, allLimit: number): Promise<{ ok: boolean; used: number; allFull?: boolean }>;
+  /** Gives back one use that got no answer (Claude refused the key, was down…). */
+  refund(user: string, what: string): Promise<void>;
   /** Today's counts for the person. */
   usage(user: string): Promise<Record<string, number>>;
 }

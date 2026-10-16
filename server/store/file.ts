@@ -132,6 +132,14 @@ export class FileStore implements Store {
     return { ok: true, used: used + 1 };
   }
 
+  async refund(user: string, what: string) {
+    const day = istDay();
+    const mine = this.counts.get(`${user}|${day}`);
+    const all = this.counts.get(`*|${day}`);
+    if (mine?.[what]) mine[what]--;
+    if (all?.claude) all.claude--;
+  }
+
   async usage(user: string) {
     return { ...(this.counts.get(`${user}|${istDay()}`) ?? {}) };
   }

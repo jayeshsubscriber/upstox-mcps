@@ -127,6 +127,21 @@ begin
   return jsonb_build_object('ok', true, 'used', mine + 1);
 end $$;
 
+-- Gives back one use that didn't get an answer (Claude refused the key, was down...). Never below 0.
+create or replace function public.agents_refund(p_key text, p_user text, p_day text, p_what text) returns void
+language plpgsql security definer set search_path = '' as $$
+declare
+  k text := 'usage:' || p_day;
+begin
+  perform public.agents_check(p_key);
+  update public.agents_kv
+     set value = jsonb_set(value, array[p_what], to_jsonb(greatest(coalesce((value ->> p_what)::integer, 0) - 1, 0))), updated_at = now()
+   where user_id = p_user and kind = k and value ? p_what;
+  update public.agents_kv
+     set value = jsonb_set(value, '{claude}', to_jsonb(greatest(coalesce((value ->> 'claude')::integer, 0) - 1, 0))), updated_at = now()
+   where user_id = '*' and kind = k and value ? 'claude';
+end $$;
+
 -- Only the anon role may call the entry points (with the server key); nobody calls the gate directly.
 revoke all on function public.agents_check(text) from public, anon, authenticated;
 revoke all on function public.agents_get(text, text, text) from public, anon, authenticated;
@@ -134,8 +149,10 @@ revoke all on function public.agents_put(text, text, text, jsonb) from public, a
 revoke all on function public.agents_lock(text, text, text, text, integer) from public, anon, authenticated;
 revoke all on function public.agents_unlock(text, text, text, text, jsonb, boolean) from public, anon, authenticated;
 revoke all on function public.agents_use(text, text, text, text, integer, integer) from public, anon, authenticated;
+revoke all on function public.agents_refund(text, text, text, text) from public, anon, authenticated;
 grant execute on function public.agents_get(text, text, text) to anon;
 grant execute on function public.agents_put(text, text, text, jsonb) to anon;
 grant execute on function public.agents_lock(text, text, text, text, integer) to anon;
 grant execute on function public.agents_unlock(text, text, text, text, jsonb, boolean) to anon;
 grant execute on function public.agents_use(text, text, text, text, integer, integer) to anon;
+grant execute on function public.agents_refund(text, text, text, text) to anon;

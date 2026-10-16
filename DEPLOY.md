@@ -17,9 +17,10 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
 
 ## What's already done
 
-- **Database**: the table `public.agents_kv` and five functions (`agents_get`, `agents_put`,
-  `agents_lock`, `agents_unlock`, `agents_use`) are in the Scanners project (migration
-  `agents_prototype_kv`, source in [supabase/agents.sql](supabase/agents.sql)). The
+- **Database**: the table `public.agents_kv` and six functions (`agents_get`, `agents_put`,
+  `agents_lock`, `agents_unlock`, `agents_use`, `agents_refund`) are in the Scanners project
+  (migrations `agents_prototype_kv` and `agents_prototype_refund`, source in
+  [supabase/agents.sql](supabase/agents.sql)). The
   table is closed to everyone; the functions open only with this app's server key,
   kept in Vault as `agents_server_key`. Nothing of custom-screener's was changed.
 - **Build**: `npm run vercel-build` makes `.vercel/output` (Vercel's Build Output API):

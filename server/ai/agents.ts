@@ -24,11 +24,14 @@ export interface RunnerOpts {
   modelId?: () => ModelId;
   /** Asks to spend one Claude run; returns why not (a daily limit) or null. */
   allow?: (what: "agent" | "brief") => Promise<string | null>;
+  /** Gives the run back when Claude didn't answer, so failures don't use up the day's limit. */
+  refund?: (what: "agent" | "brief") => Promise<void>;
 }
 
 export class AgentRunner {
   private modelId: () => ModelId;
   private allow: (what: "agent" | "brief") => Promise<string | null>;
+  private refund: (what: "agent" | "brief") => Promise<void>;
 
   constructor(
     private model: ModelClient,
@@ -39,6 +42,7 @@ export class AgentRunner {
   ) {
     this.modelId = opts.modelId ?? (() => "claude-sonnet-5-5");
     this.allow = opts.allow ?? (async () => null);
+    this.refund = opts.refund ?? (async () => undefined);
   }
 
   /** One agent checks now. Returns how many requests it filed and its note. */
@@ -53,7 +57,10 @@ export class AgentRunner {
       const no = await this.allow("agent");
       if (no) throw new Error(no);
     }
-    if (!(await this.engine.setRunning(agentId, true))) throw new Error(`${agent.name} is already checking`);
+    if (!(await this.engine.setRunning(agentId, true))) {
+      if (thinks) await this.refund("agent");
+      throw new Error(`${agent.name} is already checking`);
+    }
     // Agents run side by side, so count only this agent's new requests.
     const before = new Set(this.engine.state.requests.filter((r) => r.agentId === agentId).map((r) => r.id));
     try {
@@ -70,6 +77,9 @@ export class AgentRunner {
           canFile: agent.mandate.actions.length > 0,
           effort: "medium",
           maxTurns: 8,
+        }).catch(async (e) => {
+          await this.refund("agent");
+          throw e;
         });
         note = lastParagraph(res.text) || "Checked; nothing needs you right now.";
         by = "claude";
@@ -111,12 +121,17 @@ export class AgentRunner {
   async brief(): Promise<Brief> {
     const at = new Date().toISOString();
     let note: string | undefined;
-    if (this.model.available && !(await this.allow("brief"))) {
-      try {
-        return await this.claudeBrief(at);
-      } catch (e) {
-        if (!(e instanceof ClaudeError)) throw e;
-        note = `Claude couldn't write today's brief, so this one is from your numbers. ${e.message}`;
+    if (this.model.available) {
+      const no = await this.allow("brief");
+      if (no) note = `${no} This one is from your numbers.`;
+      else {
+        try {
+          return await this.claudeBrief(at);
+        } catch (e) {
+          await this.refund("brief");
+          if (!(e instanceof ClaudeError)) throw e;
+          note = `Claude couldn't write today's brief, so this one is from your numbers. ${e.message}`;
+        }
       }
     }
     return { text: await computedBrief(this.ctxFor("assistant"), this.engine), source: "computed", at, ...(note ? { note } : {}) };

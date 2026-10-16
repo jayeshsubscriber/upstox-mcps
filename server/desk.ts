@@ -55,7 +55,7 @@ export class Desk {
     });
     this.engine.state.connection = this.connection();
     this.assistant = new Assistant(claude, () => this.ctx("assistant"), store.chat(user), () => this.modelId);
-    this.runner = new AgentRunner(claude, this.engine, (id) => this.ctx(id), { book, market: this.market }, { modelId: () => this.modelId, allow: (what) => this.spend(what) });
+    this.runner = new AgentRunner(claude, this.engine, (id) => this.ctx(id), { book, market: this.market }, { modelId: () => this.modelId, allow: (what) => this.spend(what), refund: (what) => this.refund(what) });
   }
 
   /** The person's model choice, if it's still on offer; else the server's default. */
@@ -87,6 +87,11 @@ export class Desk {
     if (r.allFull) return "The team's Claude budget for today is used up. It resets at midnight IST.";
     const noun = { chat: "questions", agent: "agent checks with Claude", brief: "written briefs" }[what];
     return `That's all ${l[what]} ${noun} for today. It resets at midnight IST.`;
+  }
+
+  /** A use that got no answer doesn't count against the limits. Best effort: never fails the request. */
+  async refund(what: Spend): Promise<void> {
+    await this.shared.store.refund(this.user, what).catch((e) => console.warn(`[usage] refund ${what}: ${(e as Error).message}`));
   }
 
   /** Re-reads holdings and cash when they're older than `maxAgeMs` (0 = now). */

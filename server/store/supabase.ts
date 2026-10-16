@@ -133,6 +133,10 @@ export class SupabaseStore implements Store {
     return this.rpc<{ ok: boolean; used: number; allFull?: boolean }>("agents_use", { p_user: user, p_day: istDay(), p_what: what, p_limit: limit, p_all_limit: allLimit });
   }
 
+  async refund(user: string, what: string) {
+    await this.rpc<null>("agents_refund", { p_user: user, p_day: istDay(), p_what: what });
+  }
+
   async usage(user: string) {
     return (await this.get<Record<string, number>>(user, `usage:${istDay()}`)).value ?? {};
   }
