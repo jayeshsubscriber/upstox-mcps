@@ -227,6 +227,10 @@ describe("the API, signed in", { timeout: 30_000 }, () => {
     const first = await login("Pin.Person@Upstox.com", "112233");
     expect(first.body).toEqual({ user: "pin.person@upstox.com", firstTime: true });
     expect(first.cookie).toMatch(/^ua_session=/);
+    // A sign-in lasts 2 hours, and the code isn't case-sensitive.
+    const again = await post("/api/auth/login", { email: "pin.person@upstox.com", code: "OPEN-Sesame-2026", pin: "112233" });
+    expect(again.status).toBe(200);
+    expect(again.headers.get("set-cookie")).toMatch(/Max-Age=7200/);
     expect((await login("pin.person@upstox.com", "112233")).body.firstTime).toBe(false);
     for (let i = 0; i < 4; i++) expect((await login("pin.person@upstox.com", "000000")).body.error).toMatch(/Wrong PIN/);
     const fifth = await login("pin.person@upstox.com", "000000");

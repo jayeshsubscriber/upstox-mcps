@@ -2,7 +2,8 @@
  * Sign-in for a shared internal build: a work email at the allowed domain, the
  * access code everyone was given, and a personal 6-digit PIN chosen on the
  * first sign-in (so nobody else can open your account with the code alone).
- * The session is a signed cookie; nothing about it is stored.
+ * The session is a signed cookie that lasts SESSION_HOURS (2 by default) from
+ * sign-in; nothing about it is stored.
  *
  * Limits worth knowing: the code doesn't prove you own the email, so whoever
  * signs in first with an address sets its PIN. Fine for a prototype among
@@ -22,7 +23,6 @@ const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) =>
 
 export const LOCAL_USER = "local";
 const COOKIE = "ua_session";
-const SESSION_DAYS = 30;
 const MAX_FAILS = 5;
 const LOCK_MIN = 15;
 
@@ -67,8 +67,9 @@ export function verify<T extends Record<string, unknown>>(token: string | undefi
 const secure = (req: http.IncomingMessage) => String(req.headers["x-forwarded-proto"] ?? "").startsWith("https") || cfg.hosted;
 
 export function sessionCookie(req: http.IncomingMessage, user: string): string {
-  const v = sign({ u: user }, SESSION_DAYS * 86_400_000);
-  return `${COOKIE}=${v}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_DAYS * 86_400}${secure(req) ? "; Secure" : ""}`;
+  const hours = cfg.sessionHours;
+  const v = sign({ u: user }, hours * 3_600_000);
+  return `${COOKIE}=${v}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${hours * 3_600}${secure(req) ? "; Secure" : ""}`;
 }
 
 export function clearSessionCookie(req: http.IncomingMessage): string {
@@ -113,7 +114,8 @@ export async function signIn(store: Store, input: { email?: unknown; code?: unkn
   const code = cfg.accessCode;
   if (!code) throw new HttpError(400, "Sign-in is off on this server");
   const user = normalizeEmail(input.email);
-  if (!same(String(input.code ?? "").trim(), code)) throw new HttpError(401, "That access code isn't right");
+  // Not case-sensitive: "upstox" works as well as "Upstox".
+  if (!same(String(input.code ?? "").trim().toLowerCase(), code.toLowerCase())) throw new HttpError(401, "That access code isn't right");
   const pin = String(input.pin ?? "");
   if (!/^\d{6}$/.test(pin)) throw new HttpError(400, "Your PIN is 6 digits");
 

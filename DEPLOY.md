@@ -50,8 +50,9 @@ phone / laptop ──▶ Vercel (Mumbai, bom1)
 
 | Variable | What it is |
 |---|---|
-| `APP_ACCESS_CODE` | The code everyone types to sign in. Long and random; change it to stop new sign-ins |
-| `SESSION_SECRET` | Signs the sign-in cookie (30 days). Change it to sign everyone out |
+| `APP_ACCESS_CODE` | The code everyone types to sign in (not case-sensitive). Change it to stop new sign-ins |
+| `SESSION_HOURS` | How long a sign-in lasts, from the moment you sign in (default 2). Then the app asks for email, code and PIN again |
+| `SESSION_SECRET` | Signs the sign-in cookie. Change it to sign everyone out |
 | `SECRETS_KEY` | Encrypts each person's Upstox tokens. **Changing it makes saved tokens unreadable** (people reconnect) |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | The Scanners project's address and public key. The key alone opens nothing here |
 | `AGENTS_DB_KEY` | This app's server key for the `agents_*` functions (the Vault secret `agents_server_key`) |
@@ -85,6 +86,9 @@ prices, with practice fills.
   encrypted with `SECRETS_KEY` before they reach the database, never sent back to a
   browser, and used only for their owner. Anyone who can read the Vercel project's
   environment variables *and* the database could decrypt them.
+- **A short access code like `Upstox` is easy to guess.** Anyone who guesses it can sign in
+  with any @upstox.com address and use that person's share of the daily Claude limits
+  (they can't see anyone else's data: each account has its own PIN).
 - **The access code doesn't prove who you are.** Whoever first signs in with an email
   sets its PIN. Fine among colleagues; a real product signs in with Upstox.
 - **Claude cost**: roughly ₹4–10 per question on Sonnet 5.5 and about twice that on

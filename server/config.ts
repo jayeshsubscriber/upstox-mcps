@@ -29,6 +29,10 @@ export const cfg = {
   get signIn() {
     return !!this.accessCode;
   },
+  /** How long a sign-in lasts, counted from when you signed in. */
+  get sessionHours() {
+    return Math.max(1, num("SESSION_HOURS", 2));
+  },
   /** Signs session cookies and the Upstox login state. */
   get sessionSecret() {
     return env("SESSION_SECRET");
