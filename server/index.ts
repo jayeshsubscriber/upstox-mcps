@@ -39,6 +39,6 @@ const S = await sharedDeps();
 server.listen(PORT, () => {
   console.log(`Upstox agents prototype: http://localhost:${PORT}`);
   console.log(`  store: ${S.store.kind} · sign-in: ${cfg.signIn ? `on (@${cfg.domain})` : "off (one local person)"} · instruments: ${S.book.source} (${S.book.size})`);
-  console.log(`  claude: ${S.claude.available ? `on (default ${cfg.model})` : "off (agents run scripted examples; add ANTHROPIC_API_KEY)"}`);
+  console.log(`  claude: ${S.claude.available ? `on (default ${cfg.model})` : "off (chat and agent checks need ANTHROPIC_API_KEY)"}`);
   console.log("  Upstox: each person connects their own in Settings" + (cfg.signIn || cfg.hosted ? "" : "; .env tokens fill the gaps locally"));
 });

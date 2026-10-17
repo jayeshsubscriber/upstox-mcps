@@ -226,7 +226,7 @@ export function Ask({
           <Card className="p-4">
             <p className="text-[15px] font-semibold">Chat needs Claude</p>
             <p className="mt-1 text-[14px] text-ink-2">
-              Claude isn't set up on this server yet (<code className="rounded bg-sunk px-1">ANTHROPIC_API_KEY</code>). Until then your agents run their scripted examples.
+              Claude isn't set up on this server yet (<code className="rounded bg-sunk px-1">ANTHROPIC_API_KEY</code>). Until then the chat is off.
             </p>
           </Card>
         </div>

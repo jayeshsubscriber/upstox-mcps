@@ -50,12 +50,12 @@ describe("the brief when Claude fails", () => {
   it("is computed from the numbers, with a note saying why", async () => {
     const key = "NSE_EQ|INE009A01021";
     const market: MarketData = {
-      source: "demo",
+      source: "close",
       ltp: async (keys) => new Map(keys.map((k) => [k, 1100] as const)),
       quotes: async (keys) => new Map(keys.map((k) => [k, { ltp: 1100, prevClose: 1089 }] as const)),
     };
     const broker: Broker = {
-      account: "demo",
+      account: "upstox",
       canSandbox: false,
       preview: async (a, ltp) => ({ value: valueOf(a, ltp), ltp, ltpAt: "", charges: { total: 1, brokerage: 0, taxes: 1, other: 0, source: "estimate" }, margin: null }),
       funds: async () => 0,
@@ -72,7 +72,7 @@ describe("the brief when Claude fails", () => {
     };
     const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId, dataToken: null });
     const refunded: string[] = [];
-    const runner = new AgentRunner(failing, engine, ctxFor, { book, market }, { refund: async (w) => void refunded.push(w) });
+    const runner = new AgentRunner(failing, engine, ctxFor, { refund: async (w) => void refunded.push(w) });
     const brief = await runner.brief();
     expect(brief.source).toBe("computed");
     expect(brief.text).toMatch(/^Your portfolio is \*\*₹11,000\*\*/);
@@ -82,7 +82,7 @@ describe("the brief when Claude fails", () => {
 
     // Past today's limit: no Claude call at all, and the note says why.
     let called = false;
-    const limited = new AgentRunner({ available: true, turn: async () => ((called = true), Promise.reject(new Error("unused"))) }, engine, ctxFor, { book, market }, {
+    const limited = new AgentRunner({ available: true, turn: async () => ((called = true), Promise.reject(new Error("unused"))) }, engine, ctxFor, {
       allow: async () => "That's all 12 written briefs for today. It resets at midnight IST.",
     });
     const b2 = await limited.brief();

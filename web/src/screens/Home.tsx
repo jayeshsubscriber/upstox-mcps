@@ -5,6 +5,7 @@ import { inr, pct } from "../../../shared/format";
 import type { AppState } from "../../../shared/types";
 import { api, useNow } from "../api";
 import { Markdown } from "../components/Markdown";
+import { LoginCard, useUpstoxLogin } from "../components/UpstoxLogin";
 import { AgentAvatar, Button, Card, Pill, SectionHead, ago, cn } from "../components/ui";
 import { waiting } from "./Approvals";
 
@@ -22,6 +23,7 @@ export function Home({
   onAsk: (q: string) => void;
 }) {
   const now = useNow(10_000);
+  const login = useUpstoxLogin();
   const [q, setQ] = useState("");
   const [checking, setChecking] = useState(false);
   const open = waiting(state);
@@ -82,7 +84,8 @@ export function Home({
         </Card>
       )}
 
-      <BriefCard state={state} />
+      {/* Without the login there's nothing real to brief on or check: ask for it instead. */}
+      {login.needed ? <LoginCard className="mt-4" /> : <BriefCard state={state} />}
 
       <form
         className="mt-3 flex items-center gap-2 rounded-full bg-card py-1.5 pl-4 pr-1.5 shadow-card ring-1 ring-line/70 focus-within:ring-2 focus-within:ring-brand"
@@ -98,7 +101,7 @@ export function Home({
         </Button>
       </form>
 
-      {ready.length === 0 && (
+      {ready.length === 0 && !login.needed && (
         <Card className="mt-3 p-4">
           <p className="text-[15px] font-semibold">Nothing waiting</p>
           <p className="mt-0.5 text-[13px] text-ink-2">
@@ -116,9 +119,9 @@ export function Home({
         </Card>
       )}
 
-      {state.holdings.length > 0 && (
+      {state.connection.account === "upstox" && state.holdings.length > 0 && (
         <>
-          <SectionHead title="Your holdings" action={<Pill tone={state.connection.account === "upstox" ? "pos" : "neutral"}>{state.connection.account === "upstox" ? state.connection.accountName ?? "Your Upstox account" : "Demo portfolio · real prices"}</Pill>} />
+          <SectionHead title="Your holdings" action={<Pill tone="pos">{state.connection.accountName ?? "Your Upstox account"}</Pill>} />
           <Card className="p-4">
             <p className="text-[13px] text-ink-2">Current value</p>
             <p className="num display text-[26px]">{inr(value)}</p>
@@ -196,7 +199,8 @@ function BriefCard({ state }: { state: AppState }) {
       .finally(() => setLoading(false));
   };
   useEffect(() => load(30), []);
-  const b = state.brief;
+  // A brief from before this login (or from before the app showed only real accounts) isn't shown.
+  const b = state.brief && (state.brief.account ?? "none") === state.connection.account ? state.brief : null;
   return (
     <Card className="mt-4 p-4">
       <div className="mb-2 flex items-center justify-between">

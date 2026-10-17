@@ -81,7 +81,7 @@ describe("signed tokens", () => {
 // ─── Changes from several server instances ───────────────────────────────────
 
 class FakeMarket implements MarketData {
-  source = "demo" as const;
+  source = "close" as const;
   async ltp(keys: string[]) {
     return new Map(keys.map((k) => [k, 280] as const));
   }
@@ -90,7 +90,7 @@ class FakeMarket implements MarketData {
   }
 }
 class FakeBroker implements Broker {
-  account = "demo" as const;
+  account = "upstox" as const;
   canSandbox = false;
   async preview(action: Action, ltp: number): Promise<Preview> {
     // A little I/O, so changes really overlap.

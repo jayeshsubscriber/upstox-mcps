@@ -14,12 +14,11 @@
  */
 import { randomUUID } from "node:crypto";
 import { inr, monthKey, pct, price, qty } from "../shared/format";
-import type { Action, Agent, AppState, ApproveOutcome, AuditEvent, Holding, Mandate, Mode, ModelId, OrderRequest, ProposeInput, Settings } from "../shared/types";
+import type { Action, Agent, AppState, ApproveOutcome, AuditEvent, Holding, Mandate, Mode, ModelId, OrderRequest, ProposeInput } from "../shared/types";
 import type { Broker } from "./broker";
 import { practiceCross } from "./broker";
 import { checkMandate, usesBudget, valueOf } from "./mandate";
 import type { MarketData } from "./market";
-import { defaultAgents } from "./seed";
 
 export interface EngineDeps {
   market: MarketData;
@@ -494,24 +493,13 @@ export class ApprovalEngine {
     });
   }
 
-  /** Holdings and cash, as last read from the account (or the demo portfolio). */
+  /** Holdings and cash, as last read from the person's Upstox account (none until they log in). */
   setAccount(funds: number | null, holdings: Holding[]): Promise<void> {
     return this.tx(async () => {
       this.state.funds = funds;
       this.state.holdings = holdings;
       this.state.accountAt = this.now().toISOString();
       this.changed();
-    });
-  }
-
-  /** Presenter control: move a demo price by `pctMove`. Returns the new multiplier. */
-  nudge(key: string, pctMove: number): Promise<number> {
-    return this.tx(async () => {
-      const n = { ...this.state.nudges };
-      n[key] = (n[key] ?? 1) * (1 + pctMove / 100);
-      this.state.nudges = n;
-      this.changed();
-      return n[key];
     });
   }
 
@@ -582,19 +570,6 @@ export class ApprovalEngine {
     return this.tx(async () => {
       if (this.state.settings.model === model) return;
       this.state.settings.model = model;
-      this.changed();
-    });
-  }
-
-  /** Starts the demo over: requests, limits and price moves. Keeps the chosen model. */
-  reset(settings?: Partial<Settings>): Promise<void> {
-    return this.tx(async () => {
-      this.state.agents = defaultAgents(this.now());
-      this.state.requests = [];
-      this.state.audit = [];
-      this.state.nudges = {};
-      this.state.settings = { allPaused: false, mode: "practice", model: this.state.settings.model, ...settings };
-      this.log({ actor: "system", kind: "reset", text: "Demo reset: your team is back to its starting limits" });
       this.changed();
     });
   }

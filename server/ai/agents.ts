@@ -1,23 +1,27 @@
 /**
  * Agents that think. Each check runs Claude under the agent's own prompt and
  * mandate, files requests through the same engine, and leaves a note in the
- * activity feed. Without Claude, each agent runs its scripted example instead.
+ * activity feed. They only work on the person's own Upstox account: without
+ * the daily login a check doesn't run (and doesn't spend a Claude call).
  * Also the morning brief: Claude's, or one computed from the numbers.
  */
 import { inr, pct } from "../../shared/format";
 import type { Brief, ModelId } from "../../shared/types";
-import { runScenarios, type Scenario } from "../demo";
 import type { ApprovalEngine } from "../engine";
 import { pctChange } from "../indicators";
-import type { InstrumentBook } from "../instruments";
-import type { MarketData } from "../market";
 import { nowLine } from "./assistant";
 import { runLoop } from "./loop";
 import { ClaudeError, type ModelClient } from "./model";
 import { AGENT_SYSTEM, BRIEF_SYSTEM } from "./prompts";
 import { toolDefs, type ToolCtx } from "./tools";
 
-const SCRIPTED: Record<string, Scenario[]> = { autopilot: ["sip", "blocked"], tax: ["tax"], guard: ["stoploss"], corporate: ["buyback"] };
+/** Why an agent can't check (shown to the person), or null. */
+export function cantCheck(ctx: ToolCtx, claude: boolean): string | null {
+  if (ctx.broker.account !== "upstox")
+    return ctx.login === "expired" ? "Your Upstox login has ended (it ends at 3:30 am every day). Log in to Upstox so your agents can check your account." : "Log in to Upstox first: your agents check your real account.";
+  if (!claude) return "Claude isn't set up on this server, so agents can't check yet.";
+  return null;
+}
 
 export interface RunnerOpts {
   /** The person's chosen model. */
@@ -37,7 +41,6 @@ export class AgentRunner {
     private model: ModelClient,
     private engine: ApprovalEngine,
     private ctxFor: (agentId: string) => ToolCtx,
-    private scripted: { book: InstrumentBook; market: MarketData },
     opts: RunnerOpts = {},
   ) {
     this.modelId = opts.modelId ?? (() => "claude-sonnet-5-5");
@@ -46,53 +49,42 @@ export class AgentRunner {
   }
 
   /** One agent checks now. Returns how many requests it filed and its note. */
-  async run(agentId: string): Promise<{ filed: number; note: string; by: "claude" | "script" }> {
+  async run(agentId: string): Promise<{ filed: number; note: string }> {
     await this.engine.refresh();
     const agent = this.engine.agent(agentId);
     if (!agent || agentId === "assistant") throw new Error("No such agent");
     if (agent.status === "paused" || this.engine.state.settings.allPaused) throw new Error(`${agent.name} is paused`);
     if (this.engine.state.running.includes(agentId)) throw new Error(`${agent.name} is already checking`);
-    const thinks = this.model.available && !!AGENT_SYSTEM[agentId];
-    if (thinks) {
-      const no = await this.allow("agent");
-      if (no) throw new Error(no);
-    }
+    if (!AGENT_SYSTEM[agentId]) throw new Error(`${agent.name} has no check yet`);
+    const why = cantCheck(this.ctxFor(agentId), this.model.available);
+    if (why) throw new Error(why);
+    const no = await this.allow("agent");
+    if (no) throw new Error(no);
     if (!(await this.engine.setRunning(agentId, true))) {
-      if (thinks) await this.refund("agent");
+      await this.refund("agent");
       throw new Error(`${agent.name} is already checking`);
     }
     // Agents run side by side, so count only this agent's new requests.
     const before = new Set(this.engine.state.requests.filter((r) => r.agentId === agentId).map((r) => r.id));
     try {
-      let note: string;
-      let by: "claude" | "script";
-      if (thinks) {
-        const res = await runLoop({
-          model: this.model,
-          modelId: this.modelId(),
-          system: AGENT_SYSTEM[agentId],
-          tools: toolDefs({ canFile: agent.mandate.actions.length > 0 }),
-          history: [{ role: "user", content: `<context>${nowLine()}</context>\nRun your check now.` }],
-          ctx: this.ctxFor(agentId),
-          canFile: agent.mandate.actions.length > 0,
-          effort: "medium",
-          maxTurns: 8,
-        }).catch(async (e) => {
-          await this.refund("agent");
-          throw e;
-        });
-        note = lastParagraph(res.text) || "Checked; nothing needs you right now.";
-        by = "claude";
-      } else {
-        const filed = SCRIPTED[agentId] ? await runScenarios(this.engine, { holdings: await this.ctxFor(agentId).broker.holdings(), ...this.scripted }, SCRIPTED[agentId]) : 0;
-        note = filed
-          ? `Filed ${filed} example request${filed > 1 ? "s" : ""} (scripted: Claude isn't set up on this server).`
-          : "Nothing scripted for me yet. I check with Claude once it's set up on this server.";
-        by = "script";
-      }
+      const res = await runLoop({
+        model: this.model,
+        modelId: this.modelId(),
+        system: AGENT_SYSTEM[agentId],
+        tools: toolDefs({ canFile: agent.mandate.actions.length > 0 }),
+        history: [{ role: "user", content: `<context>${nowLine()}</context>\nRun your check now.` }],
+        ctx: this.ctxFor(agentId),
+        canFile: agent.mandate.actions.length > 0,
+        effort: "medium",
+        maxTurns: 8,
+      }).catch(async (e) => {
+        await this.refund("agent");
+        throw e;
+      });
+      const note = lastParagraph(res.text) || "Checked; nothing needs you right now.";
       await this.engine.agentNote(agentId, note);
       const filed = this.engine.state.requests.filter((r) => r.agentId === agentId && !before.has(r.id)).length;
-      return { filed, note, by };
+      return { filed, note };
     } finally {
       await this.engine.setRunning(agentId, false).catch((e) => console.warn(`[agents] ${(e as Error).message}`));
     }
@@ -102,6 +94,8 @@ export class AgentRunner {
   async runAll(): Promise<{ filed: number; ran: number; failed: string[] }> {
     await this.engine.refresh();
     if (this.engine.state.settings.allPaused) throw new Error("All agents are paused");
+    const why = cantCheck(this.ctxFor("assistant"), this.model.available);
+    if (why) throw new Error(why);
     // The assistant answers questions; it doesn't run checks.
     const ids = this.engine.state.agents.filter((a) => a.id !== "assistant" && a.status === "active" && !this.engine.state.running.includes(a.id)).map((a) => a.id);
     const results = await Promise.allSettled(ids.map((id) => this.run(id)));
@@ -120,13 +114,18 @@ export class AgentRunner {
   /** The morning brief. Claude when set up (and within today's limit), else computed from the numbers, with a note if Claude failed. */
   async brief(): Promise<Brief> {
     const at = new Date().toISOString();
+    const ctx = this.ctxFor("assistant");
+    if (ctx.broker.account !== "upstox") {
+      const text = ctx.login === "expired" ? "Your Upstox login has ended (it ends at 3:30 am every day). Log in to Upstox to get today's brief." : "Log in to Upstox to get your brief. It reads your real holdings and cash.";
+      return { text, source: "computed", at, account: "none" };
+    }
     let note: string | undefined;
     if (this.model.available) {
       const no = await this.allow("brief");
       if (no) note = `${no} This one is from your numbers.`;
       else {
         try {
-          return await this.claudeBrief(at);
+          return { ...(await this.claudeBrief(at)), account: "upstox" };
         } catch (e) {
           await this.refund("brief");
           if (!(e instanceof ClaudeError)) throw e;
@@ -134,7 +133,7 @@ export class AgentRunner {
         }
       }
     }
-    return { text: await computedBrief(this.ctxFor("assistant"), this.engine), source: "computed", at, ...(note ? { note } : {}) };
+    return { text: await computedBrief(ctx, this.engine), source: "computed", at, account: "upstox", ...(note ? { note } : {}) };
   }
 
   private async claudeBrief(at: string): Promise<Brief> {
@@ -159,7 +158,7 @@ function lastParagraph(text: string): string {
   return (paras[paras.length - 1] ?? "").trim().slice(0, 400);
 }
 
-/** A brief from the numbers alone, for demos without Claude. */
+/** A brief from the numbers alone, when Claude isn't set up or couldn't answer. */
 export async function computedBrief(ctx: ToolCtx, engine: ApprovalEngine): Promise<string> {
   const holdings = await ctx.broker.holdings();
   if (!holdings.length) return "No holdings yet. Your agents will tell you when something needs you.";

@@ -1,17 +1,16 @@
 /**
  * Everything that touches the account: charges, margin, funds, holdings and
- * placing an approved action. Upstox where a token allows it, otherwise
- * estimates and practice fills (as custom-screener's "Practice": the exact
- * order is built, nothing is sent).
+ * placing an approved action. Holdings and cash only come from the person's
+ * own Upstox account (the daily login); without it there are none. Charges and
+ * margin are Upstox's where the login allows, else estimated. Approved orders
+ * are practice fills or go to Upstox's sandbox (as custom-screener's
+ * "Practice": the exact order is built, nothing is sent).
  */
 import { price, qty } from "../shared/format";
 import type { Action, Charges, Holding, Mode, Preview } from "../shared/types";
 import { estimateOrderCharges, isFund } from "./costs";
-import { lastCloses } from "./data";
 import { sideOf, valueOf } from "./mandate";
-import { DemoMarket, type MarketData } from "./market";
 import type { UpstoxClient } from "./upstox";
-import type { InstrumentBook } from "./instruments";
 
 export interface PlaceResult {
   status: "open" | "filled" | "placed";
@@ -22,7 +21,8 @@ export interface PlaceResult {
 }
 
 export interface Broker {
-  account: "upstox" | "demo";
+  /** "none" until the person logs in to Upstox (the daily login): no holdings, no cash, never a stand-in. */
+  account: "upstox" | "none";
   canSandbox: boolean;
   preview(action: Action, ltp: number, funds: number | null): Promise<Preview>;
   funds(): Promise<number | null>;
@@ -63,33 +63,13 @@ export function practiceCross(action: Action, ltp: number): number | null {
   return null;
 }
 
-const DEMO_FUNDS = 250_000;
-
-/**
- * Demo portfolio for screens and agent proposals when no account token is set.
- * Buy prices are set from today's real price by `gain` (+0.28 = bought 28%
- * lower), so the story holds whatever the market did.
- */
-const DEMO_HOLDINGS: { symbol: string; quantity: number; gain: number }[] = [
-  { symbol: "INFY", quantity: 40, gain: 0.28 },
-  { symbol: "HDFCBANK", quantity: 25, gain: 0.13 },
-  { symbol: "ITC", quantity: 150, gain: 0.12 },
-  { symbol: "TCS", quantity: 10, gain: -0.06 },
-  { symbol: "RELIANCE", quantity: 30, gain: 0.12 },
-  { symbol: "NIFTYBEES", quantity: 200, gain: 0.13 },
-];
-
 export class AccountBroker implements Broker {
-  account: "upstox" | "demo";
+  account: "upstox" | "none";
   canSandbox: boolean;
   private cache = new Map<string, { at: number; value: unknown }>();
 
-  constructor(
-    private upstox: UpstoxClient,
-    private market: MarketData,
-    private instruments: InstrumentBook,
-  ) {
-    this.account = upstox.tokens.access ? "upstox" : "demo";
+  constructor(private upstox: UpstoxClient) {
+    this.account = upstox.tokens.access ? "upstox" : "none";
     this.canSandbox = !!upstox.tokens.sandbox;
   }
 
@@ -102,30 +82,14 @@ export class AccountBroker implements Broker {
   }
 
   async funds() {
-    if (this.account === "demo") return DEMO_FUNDS;
+    if (this.account === "none") return null;
     return this.cached("funds", 60_000, () => this.upstox.funds().catch(() => null));
   }
 
+  /** The person's holdings. A failed read throws (never an empty list that would read as "you hold nothing"). */
   async holdings(): Promise<Holding[]> {
-    if (this.account === "upstox") {
-      return this.cached("holdings", 60_000, () => this.upstox.holdings().catch((e) => {
-        console.warn(`[broker] holdings: ${(e as Error).message}`);
-        return [] as Holding[];
-      }));
-    }
-    const rows = DEMO_HOLDINGS.flatMap((h) => {
-      const i = this.instruments.get(h.symbol);
-      return i ? [{ ...h, name: i.name, instrumentKey: i.key }] : [];
-    });
-    const prices = await this.market.ltp(rows.map((r) => r.instrumentKey));
-    // Cost prices come from the last real close (not the drifting price), so every server instance agrees.
-    const m = this.market;
-    const closes = m instanceof DemoMarket ? rows.map((r) => m.close(r.instrumentKey) ?? null) : await Promise.all(rows.map((r) => lastCloses(r.instrumentKey).then((c) => c?.close ?? null, () => null)));
-    return rows.map(({ gain, ...r }, i) => {
-      const ltp = prices.get(r.instrumentKey) ?? 100;
-      const base = closes[i] ?? ltp;
-      return { ...r, avgPrice: Math.round((base / (1 + gain)) * 20) / 20, ltp };
-    });
+    if (this.account === "none") return [];
+    return this.cached("holdings", 60_000, () => this.upstox.holdings());
   }
 
   private async charges(action: Action, ltp: number): Promise<Charges> {

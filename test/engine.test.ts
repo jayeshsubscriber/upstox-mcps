@@ -11,7 +11,7 @@ const KEY = "NSE_EQ|INE009A01021";
 const NIFTYBEES = "NSE_EQ|INF204KB14I2";
 
 class FakeMarket implements MarketData {
-  source = "demo" as const;
+  source = "close" as const;
   prices = new Map<string, number>([
     [KEY, 1500],
     [NIFTYBEES, 280],
@@ -25,7 +25,7 @@ class FakeMarket implements MarketData {
 }
 
 class FakeBroker implements Broker {
-  account = "demo" as const;
+  account = "upstox" as const;
   canSandbox = false;
   placed: { action: Action; mode: Mode }[] = [];
   failNext = false;

@@ -5,7 +5,7 @@
  */
 import { Check, Copy, ExternalLink, Loader2, LogOut } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
-import type { Me, ModelId, SettingsInfo, TokenStatus, UpstoxStatus } from "../../../shared/types";
+import type { Me, Mode, ModelId, SettingsInfo, TokenStatus, UpstoxStatus } from "../../../shared/types";
 import { api } from "../api";
 import { Button, Card, Pill, SectionHead, cn, useToast } from "../components/ui";
 
@@ -25,7 +25,7 @@ function StatusPill({ t, on = "Connected" }: { t: TokenStatus; on?: string }) {
   return <Pill tone="pos">{t.from === "env" ? "From .env" : on}</Pill>;
 }
 
-export function Settings({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
+export function Settings({ me, onSignedOut, mode, canSandbox }: { me: Me; onSignedOut: () => void; mode: Mode; canSandbox: boolean }) {
   const toast = useToast();
   const [up, setUp] = useState<UpstoxStatus | null>(null);
   const [info, setInfo] = useState<SettingsInfo | null>(null);
@@ -60,10 +60,13 @@ export function Settings({ me, onSignedOut }: { me: Me; onSignedOut: () => void 
       <SectionHead title="Upstox" />
       {up ? <UpstoxSection up={up} setUp={setUp} /> : <Loading />}
 
+      <SectionHead title="Approved orders" />
+      <OrdersGo mode={mode} canSandbox={canSandbox} />
+
       <SectionHead title="Claude" />
       {info ? (
         <Card className="p-1.5">
-          {!info.claude && <p className="p-3 text-[14px] text-ink-2">Claude isn't set up on this server yet, so agents run scripted examples.</p>}
+          {!info.claude && <p className="p-3 text-[14px] text-ink-2">Claude isn't set up on this server yet, so the chat and agent checks are off.</p>}
           <div role="radiogroup" aria-label="Claude model">
             {info.models.map((m) => (
               <button
@@ -114,6 +117,40 @@ export function Settings({ me, onSignedOut }: { me: Me; onSignedOut: () => void 
         </>
       )}
     </div>
+  );
+}
+
+/** Where an order goes after the slide: practice fills, or Upstox's sandbox once its token is added. Never real money here. */
+function OrdersGo({ mode, canSandbox }: { mode: Mode; canSandbox: boolean }) {
+  const toast = useToast();
+  const set = (m: Mode) =>
+    api.setMode(m).then(
+      () => toast({ text: m === "sandbox" ? "Approved orders now go to Upstox's sandbox" : "Approved orders are now practice fills", tone: "ok" }),
+      (e: Error) => toast({ text: e.message, tone: "error" }),
+    );
+  return (
+    <Card className="p-4">
+      <p className="text-[14px] text-ink-2">Where an order goes after you slide to approve. Real money is off in this prototype.</p>
+      {canSandbox ? (
+        <div className="mt-3 grid grid-cols-2 gap-1 rounded-full bg-sunk p-1" role="radiogroup" aria-label="Where approved orders go">
+          {(["practice", "sandbox"] as const).map((m) => (
+            <button
+              key={m}
+              role="radio"
+              aria-checked={mode === m}
+              onClick={() => mode !== m && void set(m)}
+              className={cn("h-10 rounded-full text-[14px] font-semibold transition", mode === m ? "bg-card text-ink shadow-sm" : "text-ink-2")}
+            >
+              {m === "practice" ? "Practice" : "Upstox sandbox"}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-[14px]">
+          <b>Practice:</b> each approved order is built exactly and filled on paper. To send them to Upstox's sandbox instead, add a sandbox token above.
+        </p>
+      )}
+    </Card>
   );
 }
 
@@ -171,7 +208,7 @@ function UpstoxSection({ up, setUp }: { up: UpstoxStatus; setUp: (s: UpstoxStatu
           <div className="min-w-0 flex-1">
             <p className="text-[15px] font-semibold">Your account</p>
             <p className="text-[13px] text-ink-2">
-              {live ? `${a.name ? `${a.name}. ` : ""}Holdings, cash and real charges${until(a)}.` : "Your holdings, cash and real charges. Until then, a demo portfolio at real prices."}
+              {live ? `${a.name ? `${a.name}. ` : ""}Holdings, cash and real charges${until(a)}.` : a.expired ? "Your login ended at 3:30 am (Upstox logins last a day). Log in again to see your holdings and cash." : "Your holdings, cash and real charges. Until you log in, the app can't see your account."}
             </p>
           </div>
           <StatusPill t={a} on="Logged in" />
@@ -228,7 +265,7 @@ function UpstoxSection({ up, setUp }: { up: UpstoxStatus; setUp: (s: UpstoxStatu
         busy={busy === "sandbox"}
         onOpen={() => setOpen("sandbox")}
         onCancel={() => setOpen(null)}
-        onSave={(t) => run("sandbox", () => api.setTokens({ sandbox: t }), "Sandbox is ready: switch to it from Presenter controls")}
+        onSave={(t) => run("sandbox", () => api.setTokens({ sandbox: t }), "Sandbox is ready: switch to it under Approved orders")}
         onRemove={() => run("sandbox", () => api.setTokens({ sandbox: null }), "Sandbox token removed")}
       />
 
@@ -245,7 +282,7 @@ function UpstoxSection({ up, setUp }: { up: UpstoxStatus; setUp: (s: UpstoxStatu
               return;
             }
             setForgetArmed(false);
-            void run("forget", () => api.forgetUpstox("all"), "Upstox disconnected. Back to the demo portfolio.");
+            void run("forget", () => api.forgetUpstox("all"), "Upstox disconnected.");
           }}
         >
           {forgetArmed ? "Tap again to disconnect everything" : "Disconnect Upstox"}

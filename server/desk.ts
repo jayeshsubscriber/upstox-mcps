@@ -14,10 +14,10 @@ import { AccountBroker } from "./broker";
 import { cfg, MODELS } from "./config";
 import { ApprovalEngine } from "./engine";
 import type { InstrumentBook } from "./instruments";
-import { DemoMarket, UpstoxMarket, type MarketData } from "./market";
+import { CloseMarket, UpstoxMarket, type MarketData } from "./market";
 import { loadCreds, tokensFor, type UpstoxCreds } from "./secrets";
 import type { Store } from "./store/types";
-import { UpstoxClient } from "./upstox";
+import { jwtExpiry, UpstoxClient } from "./upstox";
 import type { AppState } from "../shared/types";
 
 export interface Shared {
@@ -44,8 +44,8 @@ export class Desk {
   ) {
     const { store, book, claude } = shared;
     this.upstox = new UpstoxClient(tokensFor(creds));
-    this.market = this.upstox.marketToken ? new UpstoxMarket(this.upstox) : new DemoMarket((k) => book.byInstrumentKey(k)?.symbol, () => this.engine.state.nudges ?? {});
-    this.broker = new AccountBroker(this.upstox, this.market, book);
+    this.market = this.upstox.marketToken ? new UpstoxMarket(this.upstox) : new CloseMarket();
+    this.broker = new AccountBroker(this.upstox);
     this.engine = new ApprovalEngine(state, {
       market: this.market,
       broker: this.broker,
@@ -55,7 +55,7 @@ export class Desk {
     });
     this.engine.state.connection = this.connection();
     this.assistant = new Assistant(claude, () => this.ctx("assistant"), store.chat(user), () => this.modelId);
-    this.runner = new AgentRunner(claude, this.engine, (id) => this.ctx(id), { book, market: this.market }, { modelId: () => this.modelId, allow: (what) => this.spend(what), refund: (what) => this.refund(what) });
+    this.runner = new AgentRunner(claude, this.engine, (id) => this.ctx(id), { modelId: () => this.modelId, allow: (what) => this.spend(what), refund: (what) => this.refund(what) });
   }
 
   /** The person's model choice, if it's still on offer; else the server's default. */
@@ -64,10 +64,20 @@ export class Desk {
     return m && MODELS.some((x) => x.id === m) ? m : cfg.model;
   }
 
+  /** The daily login: on, ended (it ends at 3:30 am IST), or never done. */
+  get login(): Connection["login"] {
+    if (this.broker.account === "upstox") return "connected";
+    return this.creds.accessToken ? "expired" : "none";
+  }
+
   connection(): Connection {
+    const ended = this.login === "expired" ? (this.creds.accessExpiresAt ?? jwtExpiry(this.creds.accessToken!)?.toISOString()) : undefined;
     return {
       market: this.market.source,
       account: this.broker.account,
+      login: this.login,
+      ...(ended ? { loginEndedAt: ended } : {}),
+      oneTapLogin: !!(this.creds.apiKey && this.creds.apiSecret),
       sandbox: this.broker.canSandbox,
       claude: this.shared.claude.available,
       research: !!this.upstox.marketToken,
@@ -76,7 +86,7 @@ export class Desk {
   }
 
   ctx(agentId: string): ToolCtx {
-    return { engine: this.engine, broker: this.broker, market: this.market, book: this.shared.book, agentId, dataToken: this.upstox.marketToken };
+    return { engine: this.engine, broker: this.broker, market: this.market, book: this.shared.book, agentId, dataToken: this.upstox.marketToken, login: this.login };
   }
 
   /** Counts one Claude run against today's limits. Returns why not, or null when it may go ahead. */

@@ -13,6 +13,7 @@ import { inr, pct, price, qty } from "../../../shared/format";
 import type { Card as ChartCardType } from "../../../shared/types";
 import { ChartCard } from "../components/ChartCard";
 import { RequestCard } from "../components/RequestCard";
+import { LoginCard } from "../components/UpstoxLogin";
 import { Button, Pill, Switch as Toggle, cn } from "../components/ui";
 import { useUiHost } from "./host";
 
@@ -502,8 +503,10 @@ const PriceChart = createComponentImplementation(A.PriceChart, ({ props }) => {
 const Holdings = createComponentImplementation(A.Holdings, ({ props }) => {
   const { state } = useUiHost();
   const gain = (h: (typeof state.holdings)[number]) => (h.avgPrice ? ((h.ltp - h.avgPrice) / h.avgPrice) * 100 : 0);
+  // Only the person's own account, never a stand-in: logged out, it asks them to log in.
+  if (state.connection.account !== "upstox") return <LoginCard compact />;
   const rows = [...state.holdings].sort((a, b) => (props.sort === "gain" ? gain(b) - gain(a) : b.quantity * b.ltp - a.quantity * a.ltp)).slice(0, props.limit ?? 10);
-  if (!rows.length) return <p className="text-[14px] text-ink-2">No holdings yet.</p>;
+  if (!rows.length) return <p className="text-[14px] text-ink-2">No holdings in your Upstox account.</p>;
   return (
     <div className="divide-y divide-line">
       {rows.map((h) => (

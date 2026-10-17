@@ -71,7 +71,7 @@ export function Agents({
           </Button>
         }
       />
-      <p className="-mt-1 mb-2 px-1 text-[12px] text-ink-3">{state.connection.claude ? "Each agent reasons with Claude, inside its limits." : "Scripted examples: Claude isn't set up on this server yet."}</p>
+      <p className="-mt-1 mb-2 px-1 text-[12px] text-ink-3">{state.connection.claude ? "Each agent reasons with Claude, inside its limits." : "Claude isn't set up on this server yet, so agents can't check."}</p>
       <div className="space-y-2.5">
         {state.agents.map((a) => {
           const w = waitingBy(a.id);

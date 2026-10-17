@@ -24,7 +24,7 @@ const book = new InstrumentBook([
 ]);
 
 class FakeMarket implements MarketData {
-  source = "demo" as const;
+  source = "close" as const;
   prices = new Map([
     [INFY, 1100],
     [ITC, 400],
@@ -38,7 +38,7 @@ class FakeMarket implements MarketData {
 }
 
 class FakeBroker implements Broker {
-  account: "upstox" | "demo" = "demo";
+  account: "upstox" | "none" = "upstox";
   canSandbox = false;
   placed: Action[] = [];
   async preview(action: Action, ltp: number): Promise<Preview> {
@@ -84,7 +84,7 @@ function reply(content: Reply["content"], stop: Reply["stop_reason"]): Reply {
 let engine: ApprovalEngine;
 let broker: FakeBroker;
 let market: FakeMarket;
-const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId, dataToken: null });
+const ctxFor = (agentId: string): ToolCtx => ({ engine, broker, market, book, agentId, dataToken: null, login: broker.account === "upstox" ? "connected" : "expired" });
 const tmpChat = () => new FileStore(mkdtempSync(path.join(tmpdir(), "chat-"))).chat("local");
 
 beforeEach(() => {
@@ -107,21 +107,36 @@ describe("assistant chat", () => {
     expect(portfolio.total_value).toBe(84_000);
     expect(portfolio.holdings[0]).toMatchObject({ symbol: "INFY", share_of_portfolio_pct: 52.38 });
     // The date goes in the user turn, never the (cached) system prompt.
-    expect(model.seen[0].messages[0].content).toMatch(/^<context>.* IST · market (open|closed) · data: a demo portfolio, demo prices<\/context>\nHow am I doing\?$/);
+    expect(model.seen[0].messages[0].content).toMatch(/^<context>.* IST · market (open|closed) · data: your Upstox account, last closing prices<\/context>\nHow am I doing\?$/);
     expect(model.seen[0].system).not.toMatch(/\d{4}/);
   });
 
-  it("says when the data source changed, so earlier demo figures aren't reused", async () => {
-    const model = new ScriptedModel([[text("Demo answer.")], [text("Real answer.")], [text("Again.")]]);
+  it("says when the data source changed, so figures from before a login aren't reused", async () => {
+    const model = new ScriptedModel([[text("Log in first.")], [text("Real answer.")], [text("Again.")]]);
     const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
+    broker.account = "none";
     await a.ask("first", () => {});
     broker.account = "upstox";
     await a.ask("second", () => {});
     await a.ask("third", () => {});
     const q = (i: number) => model.seen[i].messages.at(-1)!.content as string;
-    expect(q(0)).not.toMatch(/changed/);
-    expect(q(1)).toMatch(/· data: your Upstox account, demo prices\. This changed since the earlier questions in this chat, so figures from those answers are out of date<\/context>\nsecond$/);
-    expect(q(2)).toMatch(/· data: your Upstox account, demo prices<\/context>\nthird$/);
+    expect(q(0)).toMatch(/· data: no account: the Upstox daily login has ended, last closing prices<\/context>\nfirst$/);
+    expect(q(1)).toMatch(/· data: your Upstox account, last closing prices\. This changed since the earlier questions in this chat, so figures from those answers are out of date<\/context>\nsecond$/);
+    expect(q(2)).toMatch(/· data: your Upstox account, last closing prices<\/context>\nthird$/);
+  });
+
+  it("without the user's Upstox login it shows no portfolio and files nothing: it asks them to log in", async () => {
+    broker.account = "none";
+    const model = new ScriptedModel([
+      [call("get_portfolio", {}), call("propose_order", { symbol: "ITC", side: "BUY", quantity: 1, reason: "x" })],
+      [text("Log in to Upstox and ask again.")],
+    ]);
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
+    await a.ask("How much cash do I have?", () => {});
+    const [portfolio, order] = model.seen[1].messages.at(-1)!.content as { content: string; is_error?: boolean }[];
+    expect(JSON.parse(portfolio.content)).toEqual({ connected: false, what_to_tell_the_user: expect.stringMatching(/daily login has ended.*log in to Upstox/) });
+    expect(order).toMatchObject({ is_error: true, content: expect.stringMatching(/^Nothing filed\./) });
+    expect(engine.state.requests).toHaveLength(0);
   });
 
   it("can only file a request; nothing is placed until the user approves", async () => {
@@ -258,9 +273,9 @@ describe("agents that think", () => {
       ],
       [text("Looked at your gains.\n\nFound ₹10,000 of tax-free gains in INFY and filed a sell and buy-back for you to approve.")],
     ]);
-    const runner = new AgentRunner(model, engine, ctxFor, { book, market });
+    const runner = new AgentRunner(model, engine, ctxFor);
     const out = await runner.run("tax");
-    expect(out).toMatchObject({ filed: 2, by: "claude" });
+    expect(out).toMatchObject({ filed: 2 });
     expect(engine.state.requests.every((r) => r.agentId === "tax" && r.status === "pending")).toBe(true);
     expect(engine.agent("tax")!.lastNote).toMatch(/^Found ₹10,000/);
     expect(engine.state.audit[0]).toMatchObject({ kind: "note", actor: "agent:tax" });
@@ -268,22 +283,40 @@ describe("agents that think", () => {
   });
 
   it("checking all at once counts each agent's own filings and skips the assistant", async () => {
-    const runner = new AgentRunner({ available: false, turn: async () => { throw new Error("unused"); } }, engine, ctxFor, { book, market });
+    // Every active agent with a check gets one empty-handed turn.
+    const model = new ScriptedModel(Array.from({ length: 5 }, () => [text("Checked. Nothing for you today.")]));
+    const runner = new AgentRunner(model, engine, ctxFor);
     const out = await runner.runAll();
-    expect(out.filed).toBe(engine.state.requests.length);
+    expect(out).toMatchObject({ filed: 0, failed: [] });
     expect(engine.agent("assistant")!.lastNote).toBeUndefined();
     await expect(runner.run("assistant")).rejects.toThrow(/No such agent/);
   });
 
+  it("without the user's Upstox login, agents don't check and Claude isn't called; the brief asks them to log in", async () => {
+    broker.account = "none";
+    const model = new ScriptedModel([]);
+    const runner = new AgentRunner(model, engine, ctxFor);
+    await expect(runner.run("tax")).rejects.toThrow(/login has ended.*Log in to Upstox/);
+    await expect(runner.runAll()).rejects.toThrow(/Log in to Upstox/);
+    expect(await runner.brief()).toMatchObject({ source: "computed", account: "none", text: expect.stringMatching(/Log in to Upstox/) });
+    expect(model.seen).toHaveLength(0);
+  });
+
+  it("without Claude, agents say so instead of running anything", async () => {
+    const runner = new AgentRunner({ available: false, turn: async () => { throw new Error("unused"); } }, engine, ctxFor);
+    await expect(runner.run("tax")).rejects.toThrow(/Claude isn't set up/);
+    expect(engine.state.requests).toHaveLength(0);
+  });
+
   it("a paused agent doesn't run", async () => {
     await engine.setAgentStatus("tax", "paused");
-    const runner = new AgentRunner(new ScriptedModel([]), engine, ctxFor, { book, market });
+    const runner = new AgentRunner(new ScriptedModel([]), engine, ctxFor);
     await expect(runner.run("tax")).rejects.toThrow(/paused/);
   });
 
   it("an agent's filings still meet its limits (Autopilot can't sell)", async () => {
     const model = new ScriptedModel([[call("propose_order", { symbol: "INFY", side: "SELL", quantity: 1, reason: "x" })], [text("Done.")]]);
-    await new AgentRunner(model, engine, ctxFor, { book, market }).run("autopilot");
+    await new AgentRunner(model, engine, ctxFor).run("autopilot");
     expect(engine.state.requests[0]).toMatchObject({ agentId: "autopilot", status: "blocked" });
   });
 

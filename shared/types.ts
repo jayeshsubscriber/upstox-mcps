@@ -193,6 +193,8 @@ export interface Brief {
   at: string;
   /** Why it's computed when Claude was meant to write it. */
   note?: string;
+  /** Whose numbers it read: a brief from before a login (or after it ended) isn't reused. */
+  account?: "upstox" | "none";
 }
 
 export type Actor = "user" | "system" | `agent:${string}`;
@@ -237,13 +239,19 @@ export interface Settings {
 }
 
 export interface Connection {
-  /** Where prices come from. */
-  market: "upstox" | "demo";
-  /** Where holdings, funds, charges and margin come from. */
-  account: "upstox" | "demo";
+  /** Where prices come from: live from Upstox, or the last close when there's no token. */
+  market: "upstox" | "close";
+  /** Holdings and cash come only from the person's own Upstox account; "none" until they log in. Never a stand-in. */
+  account: "upstox" | "none";
+  /** The daily Upstox login: on, ended (logins end at 3:30 am IST), or never done. */
+  login: "connected" | "expired" | "none";
+  /** When the last daily login ended, if it did. */
+  loginEndedAt?: string;
+  /** The person saved their Upstox app's key and secret, so "Log in to Upstox" is one tap. */
+  oneTapLogin: boolean;
   /** Whether sandbox mode is possible (a sandbox token is set). */
   sandbox: boolean;
-  /** Whether Claude is set up (ANTHROPIC_API_KEY); without it agents run scripted examples. */
+  /** Whether Claude is set up (ANTHROPIC_API_KEY); without it the chat and agent checks are off. */
   claude: boolean;
   /** Whether news and fundamentals are available (an Upstox token). */
   research: boolean;
@@ -276,8 +284,6 @@ export interface AppState {
   brief: Brief | null;
   /** When holdings and funds were last read. */
   accountAt?: string;
-  /** Presenter control: demo price moves per instrument key, as multipliers. */
-  nudges?: Record<string, number>;
 }
 
 /** What an agent sends to file a request. The server fills in prices, preview and the mandate check. */

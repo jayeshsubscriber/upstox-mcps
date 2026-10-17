@@ -30,9 +30,11 @@ export function nowLine(now = new Date()): string {
   return `${when} IST · market ${open ? "open" : "closed"}`;
 }
 
-/** Where this question's numbers come from. Goes in the user turn, so a change (demo → your account) shows in the conversation. */
+/** Where this question's numbers come from. Goes in the user turn, so a change (a login, or one ending) shows in the conversation. */
 export function sourceLine(ctx: ToolCtx): string {
-  return `${ctx.broker.account === "upstox" ? "your Upstox account" : "a demo portfolio"}, ${ctx.market.source === "upstox" ? "live Upstox prices" : "demo prices"}`;
+  const account =
+    ctx.broker.account === "upstox" ? "your Upstox account" : ctx.login === "expired" ? "no account: the Upstox daily login has ended" : "no account: not logged in to Upstox";
+  return `${account}, ${ctx.market.source === "upstox" ? "live Upstox prices" : "last closing prices"}`;
 }
 
 /** The data source the last question was asked with: undefined if there was no earlier question, null if it didn't say. */
@@ -97,7 +99,7 @@ export class Assistant {
       emit({ type: "start", itemId: item.id });
       const source = sourceLine(ctx);
       const before = lastSource(thread.messages);
-      // Earlier tool results stay in the history; without this the model reuses the old (e.g. demo) figures.
+      // Earlier tool results stay in the history; without this the model reuses figures from before a login changed.
       const changed = before !== undefined && before !== source ? ". This changed since the earlier questions in this chat, so figures from those answers are out of date" : "";
       const userMsg: Msg = { role: "user", content: `<context>${nowLine()} · data: ${source}${changed}</context>\n${action ? actionTurn(action) : q}` };
       const history = trimHistory([...thread.messages, userMsg]);

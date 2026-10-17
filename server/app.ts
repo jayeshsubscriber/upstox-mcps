@@ -12,12 +12,10 @@ import { runTool } from "./ai/tools";
 import { catalogSchema } from "./ai/ui";
 import { clearSessionCookie, sessionCookie, sign, signIn, userOf, verify } from "./auth";
 import { cfg, configProblems, MODELS } from "./config";
-import { runScenarios, SCENARIOS, type Scenario } from "./demo";
 import { openDesk, type Desk, type Shared } from "./desk";
 import { body, HttpError, origin, redirect, send } from "./http";
 import { pctChange } from "./indicators";
 import { InstrumentBook } from "./instruments";
-import { DemoMarket } from "./market";
 import { describeCreds, loadCreds, saveCreds, type UpstoxCreds } from "./secrets";
 import { FileStore } from "./store/file";
 import { SupabaseStore } from "./store/supabase";
@@ -108,7 +106,9 @@ const routes: [string, RegExp, Handler][] = [
       const b = desk.engine.state.brief;
       // A recent brief stands, unless it's a computed one that Claude could now improve on. One with a note
       // (Claude failed, or today's limit is used) waits out the interval too, rather than retrying on every visit.
-      if (b && ifOlderThanMin && Date.now() - Date.parse(b.at) < ifOlderThanMin * 60_000 && (b.source === "claude" || !S.claude.available || b.note)) return b;
+      // Only a brief of the same account stands: never one from before a login, or after it ended.
+      const sameAccount = (b?.account ?? "none") === desk.broker.account;
+      if (b && sameAccount && ifOlderThanMin && Date.now() - Date.parse(b.at) < ifOlderThanMin * 60_000 && (b.source === "claude" || !S.claude.available || b.note || b.account === "none")) return b;
       const next = await desk.runner.brief();
       await desk.engine.setBrief(next);
       return next;
@@ -189,28 +189,6 @@ const routes: [string, RegExp, Handler][] = [
       return describeCreds(next, redirectUrl(req));
     },
   ],
-  [
-    "POST",
-    /^\/api\/demo\/propose$/,
-    async ({ req, desk, S }) => {
-      const which = (await body<{ scenarios?: Scenario[] }>(req)).scenarios?.filter((s) => SCENARIOS.includes(s)) ?? SCENARIOS;
-      await desk.refreshAccount(30_000);
-      return { filed: await runScenarios(desk.engine, { holdings: desk.engine.state.holdings, book: S.book, market: desk.market }, which) };
-    },
-  ],
-  [
-    "POST",
-    /^\/api\/demo\/move-price$/,
-    async ({ req, desk, S }) => {
-      const { symbol, pct } = await body<{ symbol: string; pct: number }>(req);
-      if (!(desk.market instanceof DemoMarket)) throw new HttpError(400, "Prices are live from Upstox; they can't be nudged");
-      const key = S.book.get(symbol)?.key;
-      if (!key) throw new HttpError(404, `Unknown symbol ${symbol}`);
-      await desk.engine.nudge(key, Number(pct) || 0);
-      return { symbol, ltp: desk.market.price(key) };
-    },
-  ],
-  ["POST", /^\/api\/demo\/reset$/, async ({ desk }) => desk.engine.reset()],
 ];
 
 async function settingsOf(desk: Desk, S: Shared): Promise<SettingsInfo> {

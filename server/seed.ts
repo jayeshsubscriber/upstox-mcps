@@ -84,13 +84,12 @@ export function initialState(now: Date): AppState {
     agents: defaultAgents(now),
     requests: [],
     audit: [],
-    connection: { market: "demo", account: "demo", sandbox: false, claude: false, research: false },
+    connection: { market: "close", account: "none", login: "none", oneTapLogin: false, sandbox: false, claude: false, research: false },
     funds: null,
     holdings: [],
     running: [],
     runningSince: {},
     brief: null,
-    nudges: {},
   };
 }
 
@@ -105,6 +104,7 @@ export function upgradeState(s: AppState, now: Date): AppState {
   s.running = (s.running ?? []).filter((id) => since[id] && now.getTime() - Date.parse(since[id]) < 6 * 60_000);
   s.runningSince = Object.fromEntries(s.running.map((id) => [id, since[id]]));
   s.brief ??= null;
-  s.nudges ??= {};
+  // Presenter price moves are gone.
+  delete (s as { nudges?: unknown }).nudges;
   return s;
 }

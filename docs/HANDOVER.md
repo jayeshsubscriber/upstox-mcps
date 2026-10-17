@@ -26,9 +26,9 @@ don't build the same thing or edit the same files at once. Remove the row once i
   **specialist money team** (one assistant, specialists behind it, each with its own
   limits) on a **trust platform** (mandates, approvals, audit). External MCP becomes a
   cheap channel, not the product.
-- **This repo** is a working prototype of that, used to demo it internally. It runs
-  on real Upstox APIs where a person connects their own account, and on a demo
-  portfolio at real prices where they don't.
+- **This repo** is a working prototype of that, used to show it internally. It runs
+  only on each person's own Upstox account; until they log in there's no portfolio
+  and the app asks them to log in (no demo data since 17 Oct 2026).
 - **Product decision:** take everything Robinhood's agent products do, plus Upstox's
   own ideas, but **agents never place orders**: every action becomes an approval card.
 
@@ -46,8 +46,8 @@ don't build the same thing or edit the same files at once. Remove the row once i
 
 The seven built-in agents (`server/seed.ts`): Assistant, Autopilot, Tax agent, Risk
 watchdog, Corporate actions, F&O strategist (paused by default) and Trading coach
-(advice only, no filing tools). Without Claude they file scripted example requests
-(`server/demo.ts`).
+(advice only, no filing tools). They check only with Claude and only on the person's
+own Upstox account; without either, a check says why instead of running.
 
 Tools the model can call (`server/ai/tools.ts`): `get_portfolio`, `get_quotes`,
 `get_price_history` (returns a chart card), `get_news`, `get_fundamentals`,
@@ -78,7 +78,7 @@ How screens work, in one pass:
 ## 3. What's verified, and what isn't
 
 **Verified**
-- 69 tests pass (engine 22, AI layer 17 with a scripted model, screens 8, Claude
+- 73 tests pass (engine 22, AI layer 21 with a scripted model, screens 8, Claude
   errors 5, hosted pieces 17).
 - Screens, end to end in Chromium at 375 px, with a stand-in for the Claude API that
   streams real `show_ui` calls (17 Oct): the SIP form draws with live quotes; a failing
@@ -134,7 +134,7 @@ phone / laptop ──▶ Vercel, Mumbai (bom1)
 
 - **Per request:** `app.ts` works out who's asking from the signed cookie (or "local"
   when sign-in is off) and builds that person's `Desk` (`desk.ts`): their Upstox
-  client, prices (live with a token, or a demo drift around real last closes), broker,
+  client, prices (live with a token, or the real last close before a login), broker,
   approval engine, chat and agent runner.
 - **Atomic changes across server instances:** every engine change runs inside
   `store.transact(user, fn)`. That locks the person's row (30 s lease), loads the
@@ -212,7 +212,7 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
    - **Tax agent:** real lots and LTCG/STCG from Upstox's trade P&L reports, the
      ₹1.25 lakh exemption, loss harvesting. Today it assumes shares are over a year old.
    - **Corporate actions:** from Upstox Fundamentals (`/v2/fundamentals/{isin}/corporate-actions`).
-     Today's buyback is a labelled example, and there's no tender API.
+     There's no tender API yet.
    - **Risk watchdog:** positions, margin, F&O expiry and physical-settlement risk,
      concentration.
    - **Trading coach:** from the trade P&L reports.
@@ -221,7 +221,17 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 3. **Step 4: "Create your own agent"** (name, instructions, model, limits) and **"Watch &
    propose"** rules ("every Monday, if NIFTYBEES is below its 200-day average, propose
    ₹5k"). Reuse custom-screener's plain-words rule engine and indicators
-   (`src/lib/conditionEvaluator.ts`, `src/lib/indicators/` there).
+   (`src/lib/conditionEvaluator.ts`, `src/lib/indicators/` there). The owner's examples
+   (17 Oct): "remind me to buy RELIANCE when it falls under ₹1,000", "every morning show
+   me the stocks that meet this", "every evening send me an update on my holdings". All
+   three are one shape, a standing instruction: a trigger (a price condition or a time),
+   a check run by code, and an action (tell me, or file a request for my slide). It
+   needs a `watches` record per person, a chat tool to create one (shown as a card to
+   confirm), a scheduler (Supabase pg_cron calling a secret-protected `/api/cron` every
+   few minutes in market hours), a read token that outlives the day (the 1-year
+   Analytics token for prices; holdings need the daily login, so evening updates use
+   the last login's holdings or ask for a login), and notifications (in-app first, then
+   web push).
 4. **Step 5: an MCP server** with draft-only tools, so outside agents (ChatGPT, Claude,
    Gemini, Muse) file requests that land in the Approvals inbox. Plus Agent Apps (data
    sources).
@@ -239,8 +249,9 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 - Sessions can't be revoked one at a time; changing `SESSION_SECRET` signs everyone out.
   Changing `SECRETS_KEY` makes saved tokens unreadable.
 - GTT stop-losses and buyback tenders are always simulated: the sandbox has neither.
-- Presenter controls (scripted examples, move a price, reset) are visible to every
-  signed-in person. That's intended for demos.
+- No data without the daily Upstox login (it ends at 3:30 am). Background work
+  (alerts, scheduled briefs) needs a longer-lived read token, or the person logs in
+  each day; see section 7.
 - Polling every 3 s costs function calls. It's fine for a few dozen people; move to
   a push channel if it grows.
 - Screens: what someone types into a screen and doesn't send is lost on a reload (only
@@ -327,4 +338,6 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `2665d15` | Sign-ins last until sign-out unless `SESSION_HOURS` is set |
 | `b85eb9d` | Screens the assistant builds (A2UI v0.9): `show_ui`, the Upstox catalog, server checks, renderer, presses as turns |
 | `5b329c8` | Handover: screens checked with real Claude on production |
-| (next) | Upstox's look: its colour tokens (purple `#542087`, untinted greys), Inter with Upstox's features and Inter Display headings, self-hosted font |
+| `6f16d53` | Upstox's look: its colour tokens (purple `#542087`, untinted greys), Inter with Upstox's features and Inter Display headings, self-hosted font |
+| `9deaae3` | Merged the other laptop's fix: each question says where its data comes from |
+| (next) | No demo data: holdings and cash only from the person's Upstox login; "Log in to Upstox" banner, Home card and one-tap login; prices before a login are the real last close; presenter controls, scripted agents and price nudges removed; order destination moved to Settings |

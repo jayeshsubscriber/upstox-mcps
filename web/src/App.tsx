@@ -1,14 +1,14 @@
 /**
  * The app shell: sign-in first (when the server asks for it), then an
- * Upstox-style phone screen with five tabs. On a laptop the phone sits next to
- * the presenter controls; on a phone those open from the header.
+ * Upstox-style phone screen with five tabs. Until the person logs in to
+ * Upstox, every tab asks them to (nothing stands in for their account).
  */
-import { Activity as ActivityIcon, Bot, Home as HomeIcon, Inbox, MessageCircle, Settings as Cog, SlidersHorizontal } from "lucide-react";
+import { Activity as ActivityIcon, Bot, Home as HomeIcon, Inbox, MessageCircle, Settings as Cog } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import type { Agent, AppState, Mandate, Me, OrderRequest } from "../../shared/types";
 import { api, useAppState, useMe } from "./api";
-import { DemoPanel } from "./components/DemoPanel";
 import { EditSheet } from "./components/EditSheet";
+import { LoginBanner, UpstoxLoginProvider } from "./components/UpstoxLogin";
 import { Pill, Sheet, ToastProvider, ToastViewport, cn, useToast } from "./components/ui";
 import { Activity } from "./screens/Activity";
 import { AgentSheet, Agents } from "./screens/Agents";
@@ -29,14 +29,13 @@ export default function App() {
 }
 
 /** The phone frame (full screen on a phone), with an optional panel beside it on a laptop. */
-function Frame({ children, side }: { children: ReactNode; side?: ReactNode }) {
+function Frame({ children }: { children: ReactNode }) {
   return (
-    <div className="flex min-h-full items-start justify-center gap-8 lg:py-6">
+    <div className="flex min-h-full items-start justify-center lg:py-6">
       <div className="relative flex h-[100dvh] w-full flex-col overflow-hidden bg-bg lg:h-[min(860px,calc(100dvh-48px))] lg:w-[400px] lg:rounded-[40px] lg:shadow-float lg:ring-8 lg:ring-ink/90">
         {children}
         <ToastViewport />
       </div>
-      {side}
     </div>
   );
 }
@@ -81,12 +80,11 @@ function Gate() {
   return <SignedIn me={me} onSignedOut={refresh} />;
 }
 
-/** One poller for the whole screen; the phone and the presenter panel share it. */
+/** One poller for the whole screen. */
 function SignedIn({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const { state, error } = useAppState();
-  const run = useRunner(useToast());
   return (
-    <Frame side={state && <DemoPanel state={state} run={run} className="hidden w-[340px] shrink-0 pt-2 lg:block" />}>
+    <Frame>
       {state ? <Phone state={state} error={error} me={me} onSignedOut={onSignedOut} /> : <Center>{error ? `Can't reach the server: ${error}` : "Loading your team…"}</Center>}
     </Frame>
   );
@@ -112,8 +110,8 @@ function Phone({ state, error, me, onSignedOut }: { state: AppState; error: stri
   const [busy, setBusy] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<OrderRequest | null>(null);
   const [agentId, setAgentId] = useState<string | null>(null);
-  const [demoOpen, setDemoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
   const [question, setQuestion] = useState<string | null>(null);
 
   // Back from Upstox's login page.
@@ -122,9 +120,11 @@ function Phone({ state, error, me, onSignedOut }: { state: AppState; error: stri
     const outcome = q.get("upstox");
     if (!outcome) return;
     window.history.replaceState(null, "", window.location.pathname);
-    if (outcome === "connected") toast({ text: "Logged in to Upstox. Your real holdings are loading.", tone: "ok" });
-    else toast({ text: q.get("why") ?? "Upstox login didn't finish", tone: "error" });
-    setSettingsOpen(true);
+    if (outcome === "connected") toast({ text: "Logged in to Upstox. Your holdings are loading.", tone: "ok" });
+    else {
+      toast({ text: q.get("why") ?? "Upstox login didn't finish", tone: "error" });
+      setSettingsOpen(true);
+    }
   }, [toast]);
 
   const mark = (ids: string[], on: boolean) =>
@@ -205,20 +205,18 @@ function Phone({ state, error, me, onSignedOut }: { state: AppState; error: stri
   const initial = me.user && me.user !== "local" ? me.user[0].toUpperCase() : null;
 
   return (
-    <>
+    <UpstoxLoginProvider connection={state.connection} openSettings={openSettings}>
       <header className="flex h-14 shrink-0 items-center gap-2 border-b border-line bg-card px-4 lg:pt-1">
         <span className="text-[21px] font-extrabold tracking-tight text-brand">upstox</span>
         <Pill tone="brand">Agents</Pill>
         <span className="flex-1" />
         <Pill tone={state.settings.mode === "sandbox" ? "info" : "warn"}>{state.settings.mode === "sandbox" ? "Sandbox" : "Practice"}</Pill>
-        <button onClick={() => setDemoOpen(true)} aria-label="Presenter controls" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sunk text-ink-2 lg:hidden">
-          <SlidersHorizontal size={17} />
-        </button>
         <button onClick={() => setSettingsOpen(true)} aria-label="Settings" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-brand-soft text-[14px] font-bold text-brand">
           {initial ?? <Cog size={17} />}
         </button>
       </header>
       {error && <p className="bg-warn/10 px-4 py-1.5 text-center text-[12px] text-warn">{error}</p>}
+      {tab !== "home" && <LoginBanner />}
 
       <main className="no-scrollbar flex-1 overflow-y-auto">
         {tab === "home" && (
@@ -263,13 +261,10 @@ function Phone({ state, error, me, onSignedOut }: { state: AppState; error: stri
         />
       )}
       {agentId && <AgentSheet state={state} agentId={agentId} onClose={() => setAgentId(null)} onSave={saveMandate} onToggle={toggleAgent} onCheck={checkAgent} />}
-      <Sheet open={demoOpen} onClose={() => setDemoOpen(false)} title="Presenter controls">
-        <DemoPanel state={state} run={run} />
-      </Sheet>
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Settings">
-        <Settings me={me} onSignedOut={onSignedOut} />
+        <Settings me={me} onSignedOut={onSignedOut} mode={state.settings.mode} canSandbox={state.connection.sandbox} />
       </Sheet>
-    </>
+    </UpstoxLoginProvider>
   );
 }
 

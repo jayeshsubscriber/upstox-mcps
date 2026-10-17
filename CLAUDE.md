@@ -21,7 +21,7 @@ practice fills or go to Upstox's sandbox. Don't add one.
 ```bash
 npm install
 npm run dev            # app http://localhost:5173, API :8787 (local mode: one person, files in data/)
-npm test               # 69 tests: approval engine, AI layer (scripted model), screens, hosted pieces
+npm test               # 73 tests: approval engine, AI layer (scripted model), screens, hosted pieces
 npm run typecheck
 npm run build          # run before every push
 npm run vercel-build   # the Vercel output in .vercel/output
@@ -42,7 +42,8 @@ Supabase table, so sign in with a test email.
 | Each person's Upstox tokens (AES-256-GCM) | `server/secrets.ts` |
 | Storage: files locally, Supabase hosted, lock per person | `server/store/` (`types.ts`, `file.ts`, `supabase.ts`); SQL in `supabase/agents.sql` |
 | Upstox REST client, token checks, daily login (OAuth) | `server/upstox.ts`; candles, news, fundamentals `server/data.ts` |
-| Prices (live, or demo drift around real closes) | `server/market.ts`; holdings, charges, fills `server/broker.ts` |
+| Prices (live, or the real last close before a login) | `server/market.ts`; holdings, charges, fills `server/broker.ts` |
+| "Log in to Upstox" nudge (banner, Home card, one-tap login) | `web/src/components/UpstoxLogin.tsx`; status in `Connection.login` (`server/desk.ts`) |
 | Claude: client, tools, loop, prompts, chat, agent runs, brief | `server/ai/` |
 | Screens the assistant builds (A2UI v0.9): catalog, checks, renderer | catalog `shared/a2ui.ts`; `show_ui` checks and presses `server/ai/ui.ts`; renderer (lazy chunk) `web/src/a2ui/` (`components.tsx`, `runtime.tsx`, `host.ts`); in the chat `web/src/screens/Ask.tsx` |
 | Settings from the environment | `server/config.ts` |
@@ -60,6 +61,11 @@ Supabase table, so sign in with a test email.
   `.env*` are git-ignored on purpose.
 - **Numbers come from code, never from the model.** Tools compute every figure;
   the model explains it.
+- **No demo data, ever** (the owner's call, 17 Oct 2026). Holdings and cash come only
+  from the person's own Upstox login; without it there are none, and every surface
+  (Home, a banner on other tabs, the chat, agent checks, the brief, screens) asks them
+  to log in to Upstox. Prices before a login are the real last close. Don't add a
+  sample portfolio, drifting prices or scripted requests back.
 - **The server enforces each agent's limits** whatever the model asks for.
 - **Screens (A2UI) can't act.** A screen's buttons only send the user's choices back to
   the assistant or open a tab; a filed request shows as `OrderRequest`, the normal

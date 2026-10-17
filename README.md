@@ -1,8 +1,9 @@
 # Upstox Agents: prototype
 
 An internal prototype of **a personal team of AI agents inside the Upstox app**.
-It runs on real Upstox data when you connect Upstox, and on a demo portfolio at
-real prices when you don't. It runs on a laptop for one person, or on Vercel
+It works only on real data: each person's own Upstox account. Until they log
+in to Upstox (and again each morning, as logins end at 3:30 am), the app shows
+no portfolio and asks them to log in. It runs on a laptop for one person, or on Vercel
 for colleagues: each signs in, gets their own team, and connects their own
 Upstox ([DEPLOY.md](DEPLOY.md)).
 
@@ -29,15 +30,15 @@ Or as one process: `npm run build && npm start` → http://localhost:8787
 
 For colleagues: [DEPLOY.md](DEPLOY.md) (Vercel + the Scanners Supabase project).
 
-On a laptop the phone screen sits next to **Presenter controls**: make the agents
-check, run scripted examples, move a price, switch between practice and the Upstox
-sandbox, reset. On a phone, open them from the sliders button in the header.
+There's no demo mode. Without an Upstox login, Home shows a "Log in to Upstox"
+card, every other tab a slim banner, and the assistant, agent checks and brief ask
+for the login instead of showing a portfolio.
 
 ### What turns things on
 
 | Where | What it turns on |
 |---|---|
-| `ANTHROPIC_API_KEY` (server) | **Claude**: chat on the Ask tab, agents that reason before filing, a written brief. Sonnet 5.5 by default (`CLAUDE_MODEL`); each person can switch to Opus 5.5 in Settings. Without a key, agents run scripted examples and the brief is computed from the numbers |
+| `ANTHROPIC_API_KEY` (server) | **Claude**: chat on the Ask tab, agents that reason before filing, a written brief. Sonnet 5.5 by default (`CLAUDE_MODEL`); each person can switch to Opus 5.5 in Settings. Without a key, the chat and agent checks are off and the brief is computed from the numbers |
 | Settings → Upstox → Analytics token | Live prices, **news** and **fundamentals** (1-year read-only token) |
 | Settings → Upstox → Log in with Upstox (or paste a token) | Your holdings, funds, charges and margin from Upstox's APIs (daily login, until 03:30 IST) |
 | Settings → Upstox → Sandbox token | "Upstox sandbox" mode: approved orders go to Upstox's sandbox (no real money) |
@@ -46,8 +47,8 @@ Tokens entered in Settings are encrypted on the server and never sent back to th
 browser. On a local run without sign-in, `UPSTOX_*` in `.env` fill whatever
 isn't connected in Settings; hosted, they're ignored.
 
-With nothing connected, prices and charts still come from Upstox's public daily
-candles, so the demo portfolio shows real last-close prices.
+Before a login, prices and charts still come from Upstox's public daily candles
+(the last close, labelled as such); holdings and cash don't exist until the login.
 
 **The prototype never calls a live order endpoint.** There's no switch for it, by design.
 
@@ -106,7 +107,7 @@ How the model is used (`server/ai/model.ts`, `loop.ts`):
 ## How it's built
 
 ```
-web/      React + Vite + Tailwind, phone-first (sign-in, the app, Settings, presenter panel)
+web/      React + Vite + Tailwind, phone-first (sign-in, the app, Settings)
 server/   Node HTTP API; the app polls it every few seconds
   index.ts       the local server (API + built app)
   vercel.ts      the same API as one Vercel function
@@ -122,9 +123,8 @@ server/   Node HTTP API; the app polls it every few seconds
   upstox.ts      Upstox REST client per person, token checks, daily login (OAuth)
   data.ts        daily candles (public), news and fundamentals (the person's token)
   indicators.ts  SMA, RSI, drawdown: the numbers agents quote
-  market.ts      live Upstox prices, or real last closes with a demo drift you can nudge
+  market.ts      live Upstox prices, or the real last close before a login
   instruments.ts Upstox's NSE instrument master (cached; shipped with the Vercel build)
-  demo.ts        scripted agent requests (used without Claude)
   ai/            Claude: model client, tools, loop, prompts, assistant, agent runs and brief
     ui.ts        screens (A2UI): show_ui → checked A2UI messages; presses back into the chat
 shared/   types and formatting used by both sides; a2ui.ts is the screen catalog
@@ -139,7 +139,7 @@ Locally, state lives in `data/state.json` and the chat in `data/chat.json`
 (git-ignored); with sign-in on, each person gets `data/users/<email>/`. Hosted, it
 lives in the Scanners project's `agents_kv` table, one row per person and kind,
 changed under a short lock so several server instances never trample each other.
-"Reset demo" starts the requests and limits over.
+
 
 ### Reused from `custom-screener`
 

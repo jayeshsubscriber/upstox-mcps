@@ -1,9 +1,9 @@
 /**
  * Market data for the agents. Daily candles come from Upstox's historical API,
  * which answers without a token (custom-screener refreshes from the same
- * public API), so charts and prices are real even in demo mode. News and
- * fundamentals need the person's Upstox token. The cache is shared: candles,
- * news and ratios are the same for everyone.
+ * public API), so charts and last-close prices are real before anyone logs
+ * in. News and fundamentals need the person's Upstox token. The cache is
+ * shared: candles, news and ratios are the same for everyone.
  */
 import { UpstoxError } from "./upstox";
 
@@ -73,7 +73,7 @@ export async function dailyCandles(instrumentKey: string, days: number): Promise
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** The last two daily closes (for demo prices and the day's change). */
+/** The last two daily closes (prices before a login, and the day's change). */
 export async function lastCloses(instrumentKey: string): Promise<{ close: number; prevClose: number; date: string } | null> {
   const c = await dailyCandles(instrumentKey, 12);
   if (c.length < 2) return null;

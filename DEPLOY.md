@@ -75,10 +75,10 @@ To read the server key again: Supabase → SQL Editor →
 |---|---|---|
 | Live prices, news, fundamentals | **Analytics token**: [Upstox → My Apps](https://account.upstox.com/developer/apps) → Analytics → Generate, paste | 1 year |
 | Their real holdings, cash, real charges | **Daily login**: create an app in My Apps with the Redirect URL that Settings shows (`https://<project>.vercel.app/api/upstox/callback`), paste its API key and secret once, then tap *Log in with Upstox* each day. Or paste a day's access token | until 03:30 IST |
-| Approved orders sent to Upstox's sandbox | **Sandbox token**: My Apps → Sandbox → Generate, paste; then switch to *Upstox sandbox* in Presenter controls | 30 days |
+| Approved orders sent to Upstox's sandbox | **Sandbox token**: My Apps → Sandbox → Generate, paste; then switch to *Upstox sandbox* in Settings → Approved orders | 30 days |
 
-With nothing connected, everything works on a demo portfolio at real last-close
-prices, with practice fills.
+There's no demo portfolio: until someone logs in to Upstox, the app shows no
+holdings or cash and asks them to log in (prices are the real last close).
 
 ## Things to know
 

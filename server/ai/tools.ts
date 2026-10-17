@@ -27,6 +27,17 @@ export interface ToolCtx {
   dataToken: string | null;
   /** Screens in this chat (show_ui). Only the chat has one. */
   ui?: UiSession;
+  /** The person's daily Upstox login, for what to tell them when it's off. */
+  login?: "connected" | "expired" | "none";
+}
+
+/** What the model tells the user when their account can't be read. Never a guess, never a stand-in. */
+export function loginNeeded(ctx: Pick<ToolCtx, "login">): string {
+  const why =
+    ctx.login === "expired"
+      ? "The user's Upstox daily login has ended (Upstox logins end at 3:30 am IST every day)"
+      : "The user hasn't logged in to their Upstox account in this app yet";
+  return `${why}, so their holdings and cash can't be read. Don't guess and don't reuse figures from earlier in the chat. Tell them in one line to log in to Upstox with the Log in button at the top of the app (or Settings → Upstox), then ask again.`;
 }
 
 export interface ToolOutput {
@@ -92,6 +103,7 @@ function resolve(ctx: ToolCtx, symbol: unknown) {
 // ─── Read tools ──────────────────────────────────────────────────────────────
 
 async function portfolio(ctx: ToolCtx) {
+  // Holdings that failed to load throw (runTool reports it); "none" never reaches here.
   const holdings = await ctx.broker.holdings();
   const quotes = await ctx.market.quotes(holdings.map((h) => h.instrumentKey)).catch(() => new Map());
   const rows = holdings.map((h) => {
@@ -114,11 +126,12 @@ const SPECS: Spec[] = [
     required: [],
     label: () => "Looking at your holdings",
     run: async (_i, ctx) => {
+      if (ctx.broker.account !== "upstox") return { content: json({ connected: false, what_to_tell_the_user: loginNeeded(ctx) }) };
       const p = await portfolio(ctx);
       const funds = await ctx.broker.funds().catch(() => null);
       return {
         content: json({
-          source: ctx.broker.account === "upstox" ? "the user's Upstox account" : "demo portfolio (real market prices)",
+          source: "the user's Upstox account",
           cash_available: funds,
           total_value: r2(p.value),
           invested: r2(p.invested),
@@ -172,7 +185,7 @@ const SPECS: Spec[] = [
           };
         }),
       );
-      return { content: json({ prices_from: ctx.market.source === "upstox" ? "Upstox live" : "last close (demo)", quotes: out }) };
+      return { content: json({ prices_from: ctx.market.source === "upstox" ? "Upstox live" : "the last close (the user isn't logged in to Upstox, so not live; say so)", quotes: out }) };
     },
   },
   {
@@ -229,7 +242,9 @@ const SPECS: Spec[] = [
     label: (i) => (Array.isArray(i.symbols) && i.symbols.length ? `Reading news on ${(i.symbols as string[]).slice(0, 3).join(", ")}` : "Reading news on your holdings"),
     run: async (i, ctx) => {
       if (!ctx.dataToken) return { content: json({ available: false, reason: "News needs an Upstox token, which the user hasn't connected (Settings → Upstox). Say so briefly." }) };
-      const syms = Array.isArray(i.symbols) && i.symbols.length ? (i.symbols as string[]) : (await ctx.broker.holdings()).map((h) => h.symbol);
+      const mine = !(Array.isArray(i.symbols) && i.symbols.length);
+      if (mine && ctx.broker.account !== "upstox") return { content: json({ connected: false, what_to_tell_the_user: loginNeeded(ctx) }) };
+      const syms = mine ? (await ctx.broker.holdings()).map((h) => h.symbol) : (i.symbols as string[]);
       const keys = syms.flatMap((s) => (resolve(ctx, s) ? [resolve(ctx, s)!.key] : []));
       const items = await news(keys, ctx.dataToken);
       return {
@@ -304,6 +319,8 @@ const SPECS: Spec[] = [
     files: true,
     label: (i) => `Drafting: ${String(i.side).toLowerCase()} ${String(i.symbol).toUpperCase()}`,
     run: async (i, ctx) => {
+      // Requests are checked against the person's real cash and holdings.
+      if (ctx.broker.account !== "upstox") return err(`Nothing filed. ${loginNeeded(ctx)}`);
       const inst = resolve(ctx, i.symbol);
       if (!inst) return err(`Unknown NSE symbol ${String(i.symbol)}`);
       const side = i.side as "BUY" | "SELL";
@@ -338,6 +355,7 @@ const SPECS: Spec[] = [
     files: true,
     label: (i) => `Drafting a stop-loss for ${String(i.symbol).toUpperCase()}`,
     run: async (i, ctx) => {
+      if (ctx.broker.account !== "upstox") return err(`Nothing filed. ${loginNeeded(ctx)}`);
       const inst = resolve(ctx, i.symbol);
       if (!inst) return err(`Unknown NSE symbol ${String(i.symbol)}`);
       const holding = (await ctx.broker.holdings()).find((h) => h.instrumentKey === inst.key);
