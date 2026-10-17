@@ -114,7 +114,7 @@ export function SurfaceView({ runtime, surfaceId }: { runtime: UiRuntime; surfac
   if (!surface) return null;
   return (
     <Boundary>
-      <div className="rise rounded-card bg-card p-4 shadow-[0_1px_2px_rgb(20_10_40/0.06)] ring-1 ring-line/70">
+      <div className="rise rounded-card bg-card p-4 shadow-card ring-1 ring-line/70">
         <A2uiSurface surface={surface} />
       </div>
     </Boundary>

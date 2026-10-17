@@ -43,7 +43,7 @@ export function Home({
     <div className="px-4 pb-6">
       <div className="pt-4">
         <p className="text-[14px] text-ink-2">{hello}</p>
-        <h1 className="text-[24px] font-bold leading-tight">{ready.length ? `${ready.length} ${ready.length === 1 ? "thing needs" : "things need"} your OK` : "You're all caught up"}</h1>
+        <h1 className="display text-[24px] leading-tight">{ready.length ? `${ready.length} ${ready.length === 1 ? "thing needs" : "things need"} your OK` : "You're all caught up"}</h1>
       </div>
 
       {state.settings.allPaused && (
@@ -72,7 +72,7 @@ export function Home({
               })}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[16px] font-bold">
+              <p className="text-[16px] font-semibold">
                 Review {ready.length} {ready.length === 1 ? "request" : "requests"}
               </p>
               <p className="text-[13px] opacity-85">Total {inr(ready.reduce((s, r) => s + r.preview.value, 0))} · nothing happens until you approve</p>
@@ -85,7 +85,7 @@ export function Home({
       <BriefCard state={state} />
 
       <form
-        className="mt-3 flex items-center gap-2 rounded-full bg-card py-1.5 pl-4 pr-1.5 shadow-[0_1px_2px_rgb(20_10_40/0.06)] ring-1 ring-line/70 focus-within:ring-2 focus-within:ring-brand"
+        className="mt-3 flex items-center gap-2 rounded-full bg-card py-1.5 pl-4 pr-1.5 shadow-card ring-1 ring-line/70 focus-within:ring-2 focus-within:ring-brand"
         onSubmit={(e) => {
           e.preventDefault();
           if (q.trim()) onAsk(q.trim());
@@ -121,7 +121,7 @@ export function Home({
           <SectionHead title="Your holdings" action={<Pill tone={state.connection.account === "upstox" ? "pos" : "neutral"}>{state.connection.account === "upstox" ? state.connection.accountName ?? "Your Upstox account" : "Demo portfolio · real prices"}</Pill>} />
           <Card className="p-4">
             <p className="text-[13px] text-ink-2">Current value</p>
-            <p className="num text-[26px] font-bold">{inr(value)}</p>
+            <p className="num display text-[26px]">{inr(value)}</p>
             <p className={cn("num text-[14px] font-semibold", gain >= 0 ? "text-pos" : "text-neg")}>
               {gain >= 0 ? "+" : ""}
               {inr(gain)} ({pct(cost ? (gain / cost) * 100 : 0)}) overall

@@ -37,7 +37,7 @@ export function Agents({
   return (
     <div className="px-4 pb-6">
       <div className="pt-4">
-        <h1 className="text-[24px] font-bold">Your agents</h1>
+        <h1 className="display text-[24px]">Your agents</h1>
         <p className="mt-0.5 text-[14px] text-ink-2">Each works within the limits you set. None can place an order without you.</p>
       </div>
 
@@ -47,7 +47,7 @@ export function Agents({
             {paused ? <OctagonPause size={22} /> : <ShieldCheck size={22} />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[16px] font-bold">{paused ? "All agents are paused" : "Agents are working"}</p>
+            <p className="text-[16px] font-semibold">{paused ? "All agents are paused" : "Agents are working"}</p>
             <p className="text-[13px] text-ink-2">{paused ? "Nothing can be approved until you resume." : "Pause everything at once, any time."}</p>
           </div>
           <Switch checked={!paused} onChange={(on) => onPauseAll(!on)} label="Agents on" />
@@ -82,7 +82,7 @@ export function Agents({
                 <button onClick={() => onOpen(a.id)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                   <AgentAvatar agent={a} size={40} />
                   <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-bold">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[15px] font-semibold">
                       {a.name}
                       {a.status === "paused" && <Pill>Paused</Pill>}
                       {state.running.includes(a.id) && (
@@ -115,7 +115,7 @@ export function Agents({
             <Plus size={20} />
           </span>
           <div>
-            <p className="text-[15px] font-bold">Create your own agent</p>
+            <p className="text-[15px] font-semibold">Create your own agent</p>
             <p className="text-[13px] text-ink-2">Describe it in plain words, pick its limits. Coming in step 4.</p>
           </div>
         </div>

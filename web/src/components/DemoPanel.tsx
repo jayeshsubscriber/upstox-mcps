@@ -22,7 +22,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
 
   return (
     <aside className={cn("text-[14px]", className)}>
-      <p className="text-[12px] font-semibold uppercase tracking-wide text-ink-3">Presenter controls · not part of the app</p>
+      <p className="allcaps text-ink-3">Presenter controls · not part of the app</p>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Pill tone={c.claude ? "pos" : "neutral"}>Claude: {c.claude ? "on" : "off"}</Pill>
@@ -36,7 +36,7 @@ export function DemoPanel({ state, run, className }: { state: AppState; run: (p:
         {state.running.length > 0 ? `Checking (${state.running.length})…` : c.claude ? "All agents check now (Claude)" : "All agents check now"}
       </Button>
       <p className="mt-1.5 text-[12px] text-ink-3">{c.claude ? "Each agent reasons with Claude under its own limits." : "Claude isn't set up on this server: agents run the scripted examples below."}</p>
-      <p className="mt-3 text-[12px] font-semibold uppercase tracking-wide text-ink-3">Scripted examples</p>
+      <p className="allcaps mt-3 text-ink-3">Scripted examples</p>
       <div className="mt-2 space-y-1.5">
         {SCENARIOS.map((s) => (
           <button key={s.id} onClick={() => run(api.demoPropose([s.id]), "New request filed")} className="w-full rounded-xl bg-card p-2.5 text-left ring-1 ring-line hover:ring-brand/40">

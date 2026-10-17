@@ -53,7 +53,7 @@ export function Approvals({ state, actions }: { state: AppState; actions: Approv
   return (
     <div className="px-4 pb-6">
       <div className="pt-4">
-        <h1 className="text-[24px] font-bold">Approvals</h1>
+        <h1 className="display text-[24px]">Approvals</h1>
         <p className="mt-0.5 text-[14px] text-ink-2">Your agents never place orders. Each one waits here for your OK.</p>
       </div>
 
@@ -121,7 +121,7 @@ function GroupCard({ label, rs, state, actions }: { label: string; rs: OrderRequ
         <AgentAvatar agent={agent} size={32} />
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-semibold text-ink-2">{agent.name} asks · {rs.length} together</p>
-          <p className="text-[16px] font-bold leading-snug">{label}</p>
+          <p className="text-[16px] font-semibold leading-snug">{label}</p>
         </div>
       </div>
       <div className="mt-2 divide-y divide-line">

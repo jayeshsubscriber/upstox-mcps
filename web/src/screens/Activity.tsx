@@ -41,7 +41,7 @@ export function Activity({ state }: { state: AppState }) {
   return (
     <div className="px-4 pb-6">
       <div className="pt-4">
-        <h1 className="text-[24px] font-bold">Activity</h1>
+        <h1 className="display text-[24px]">Activity</h1>
         <p className="mt-0.5 text-[14px] text-ink-2">Every request, decision and order, with who did it. Kept permanently.</p>
       </div>
       <div className="no-scrollbar -mx-4 mt-4 flex gap-1.5 overflow-x-auto px-4" role="tablist" aria-label="Filter">

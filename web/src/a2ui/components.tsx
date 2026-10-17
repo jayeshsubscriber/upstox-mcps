@@ -197,11 +197,11 @@ const Text = createComponentImplementation(A.Text, ({ props }) => {
     <p
       className={cn(
         "whitespace-pre-wrap break-words",
-        v === "title" && "text-[18px] font-bold leading-snug",
-        v === "subtitle" && "text-[15px] font-semibold",
+        v === "title" && "display text-[20px] leading-tight",
+        v === "subtitle" && "text-[16px] font-semibold leading-snug",
         v === "body" && "text-[15px] leading-relaxed",
-        v === "caption" && "text-[13px] text-ink-3",
-        v === "label" && "text-[12px] font-semibold uppercase tracking-wide text-ink-3",
+        v === "caption" && "text-[13px] leading-snug text-ink-3",
+        v === "label" && "allcaps text-ink-3",
         props.tone && TONE[props.tone],
         props.align && ALIGN_TEXT[props.align],
       )}
@@ -216,7 +216,7 @@ const Metric = createComponentImplementation(A.Metric, ({ props }) => {
   return (
     <div className="min-w-0 rounded-2xl bg-card p-3 ring-1 ring-line">
       <p className="truncate text-[12px] font-semibold text-ink-3">{str(props.label)}</p>
-      <p className="num mt-0.5 truncate text-[20px] font-bold">{str(props.value)}</p>
+      <p className="num display mt-0.5 truncate text-[20px]">{str(props.value)}</p>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">
         {change !== null && <Pill tone={change >= 0 ? "pos" : "neg"}>{pct(change)}</Pill>}
         {props.caption && <span className="text-[12px] text-ink-3">{str(props.caption)}</span>}
@@ -477,7 +477,7 @@ const Quote = createComponentImplementation(A.Quote, ({ props }) => {
     <div className="quote rounded-2xl bg-card px-3.5 py-2.5 ring-1 ring-line">
       <div className="quote-row flex min-h-[32px] items-center justify-between gap-x-3 gap-y-0.5">
         <span className="min-w-0 max-w-full">
-          <span className="block truncate text-[15px] font-bold">{q?.symbol ?? sym}</span>
+          <span className="block truncate text-[15px] font-semibold">{q?.symbol ?? sym}</span>
           <span className="block truncate text-[12px] text-ink-3">{q?.name ?? "Price not available"}</span>
         </span>
         {q?.price != null && (
@@ -509,7 +509,7 @@ const Holdings = createComponentImplementation(A.Holdings, ({ props }) => {
       {rows.map((h) => (
         <div key={h.instrumentKey} className="flex items-center justify-between gap-3 py-2.5">
           <span className="min-w-0">
-            <span className="block text-[15px] font-bold">{h.symbol}</span>
+            <span className="block text-[15px] font-semibold">{h.symbol}</span>
             <span className="num block text-[12px] text-ink-3">
               {qty(h.quantity)} × {price(h.avgPrice)}
             </span>

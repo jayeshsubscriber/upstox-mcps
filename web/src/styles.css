@@ -1,29 +1,47 @@
-@import "@fontsource-variable/inter/index.css";
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 /*
- * Tokens. Screens use these through Tailwind (bg-card, text-ink-2, …), never
- * raw colours. Purple marks what is ON: the main action, the selected tab,
- * focus. Gains/OK are green, problems red, waiting amber. Text tokens pass
- * 4.5:1 on card and bg.
+ * Inter 4.1 (OFL, fonts/Inter-LICENSE.txt), as Upstox sets its app: text in
+ * Inter, headings in Inter Display (the optical-size axis, 14 to 32), with the
+ * tailed l and square punctuation switched on below. Subset from inter-ui's
+ * InterVariable.woff2 to Latin, punctuation, ₹, − and arrows, keeping every
+ * feature: pyftsubset InterVariable.woff2 --unicodes="U+0020-007E,U+00A0-017F,
+ * U+0192,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+20B9,U+2122,U+2190-2199,
+ * U+2212,U+2215,U+2713-2715" --layout-features='*' --flavor=woff2
+ */
+@font-face {
+  font-family: "Inter Upstox";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/InterVariable-upstox.woff2") format("woff2");
+}
+
+/*
+ * Tokens, from Upstox's own design system (upstox.com): its purple, neutral
+ * greys with no tint, its red and orange. Screens use these through Tailwind
+ * (bg-card, text-ink-2, …), never raw colours. Purple marks what is ON: the
+ * main action, the selected tab, focus. Gains/OK are green, problems red,
+ * waiting amber. Text tokens pass 4.5:1 on card and bg; that's why gains use
+ * a green a shade darker than Upstox's #008858 (4.3:1 on bg).
  */
 :root {
   color-scheme: light;
-  --bg: 245 244 250;
+  --bg: 249 249 249; /* neutrals-50 #f9f9f9 */
   --card: 255 255 255;
-  --sunk: 241 239 247;
-  --line: 228 225 238;
-  --ink: 24 20 38;
-  --ink-2: 82 76 102;
-  --ink-3: 108 102 128;
-  --brand: 94 47 194;
-  --brand-soft: 239 233 253;
+  --sunk: 241 241 241; /* neutrals-100 #f1f1f1 */
+  --line: 225 225 225; /* neutrals-200 #e1e1e1 */
+  --ink: 17 17 17; /* neutrals-1100 #111 */
+  --ink-2: 82 82 82; /* neutrals-700 #525252 */
+  --ink-3: 106 106 106; /* grey-500 #6a6a6a */
+  --brand: 84 32 135; /* purple-800 #542087, Upstox's button purple */
+  --brand-soft: 245 239 251; /* purple-100 #f5effb */
   --on-brand: 255 255 255;
   --pos: 3 130 86;
-  --neg: 200 40 52;
-  --warn: 166 98 0;
+  --neg: 213 54 39; /* red-600 #d53627 */
+  --warn: 148 74 0; /* orange-700 #944a00 */
   --info: 30 104 200;
 }
 
@@ -36,12 +54,30 @@ body {
   margin: 0;
   background: rgb(var(--bg));
   color: rgb(var(--ink));
-  font-family: "Inter Variable", Inter, ui-sans-serif, system-ui, sans-serif;
+  font-family: "Inter Upstox", Inter, ui-sans-serif, system-ui, sans-serif;
+  /* Upstox's Inter: discretionary ligatures, square punctuation and quotes, the l with a tail; text a touch tight. */
+  font-feature-settings: "dlig" on, "ss07" on, "ss08" on, "cv05" on;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
 }
 .num {
   font-variant-numeric: tabular-nums;
+}
+/* Headings and big numbers: Inter Display, semibold and tighter, as Upstox's display styles. */
+.display {
+  font-weight: 600;
+  font-variation-settings: "opsz" 32;
+  letter-spacing: -0.02em;
+}
+/* Small capitals labels (Upstox's allcaps): wide tracking. */
+.allcaps {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.1;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
 }
 :focus-visible {
   outline: 2px solid rgb(var(--brand));
@@ -84,7 +120,7 @@ body {
   border: 0;
   border-radius: 999px;
   background: rgb(var(--brand)) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E") center / 22px no-repeat;
-  box-shadow: 0 2px 8px rgb(94 47 194 / 0.35);
+  box-shadow: 0 2px 8px rgb(var(--brand) / 0.35);
 }
 .slide::-moz-range-thumb {
   width: 48px;

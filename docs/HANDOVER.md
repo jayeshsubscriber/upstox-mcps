@@ -297,6 +297,12 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
     collapse for a frame and jump to the top.
   - zod-to-json-schema warns about recursive types when building the catalog's JSON
     Schema (`/api/a2ui/catalog`); `catalogSchema()` mutes that.
+- **Upstox's look:** the tokens in `web/src/styles.css` come from upstox.com's CSS
+  (its `--colors-*` palette and `sw-*` type styles). Fontsource's and Google's Inter
+  builds drop Inter's character variants, so the tailed l (`cv05`) didn't show; the app
+  now ships its own subset of Inter 4.1 (`web/src/fonts/`, the command is in
+  `styles.css`). Gains keep a green a shade darker than Upstox's `#008858`, which is
+  under 4.5:1 on the grey background.
 - **Agent shells in cloud sessions:**
   - `pkill -f <pattern>` can kill your own shell; kill by process id instead.
   - Playwright's browser is at `/opt/pw-browsers/chromium`.
@@ -316,4 +322,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `f26b99b` | Daily limits off unless `DAILY_LIMITS=on` (the owner's call, 16 Oct 2026) |
 | `2665d15` | Sign-ins last until sign-out unless `SESSION_HOURS` is set |
 | `b85eb9d` | Screens the assistant builds (A2UI v0.9): `show_ui`, the Upstox catalog, server checks, renderer, presses as turns |
-| (next) | Handover: screens checked with real Claude on production |
+| `5b329c8` | Handover: screens checked with real Claude on production |
+| (next) | Upstox's look: its colour tokens (purple `#542087`, untinted greys), Inter with Upstox's features and Inter Display headings, self-hosted font |

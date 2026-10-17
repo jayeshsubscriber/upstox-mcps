@@ -3,7 +3,7 @@ export default {
   content: ["./web/index.html", "./web/src/**/*.{ts,tsx}"],
   theme: {
     extend: {
-      fontFamily: { sans: ['"Inter Variable"', "Inter", "ui-sans-serif", "system-ui", "sans-serif"] },
+      fontFamily: { sans: ['"Inter Upstox"', "Inter", "ui-sans-serif", "system-ui", "sans-serif"] },
       colors: {
         // Tokens live in web/src/styles.css; screens never name a raw colour.
         bg: "rgb(var(--bg) / <alpha-value>)",
@@ -22,7 +22,7 @@ export default {
         info: "rgb(var(--info) / <alpha-value>)",
       },
       borderRadius: { card: "16px" },
-      boxShadow: { float: "0 12px 32px rgb(20 10 40 / 0.18)" },
+      boxShadow: { float: "0 12px 32px rgb(17 17 17 / 0.16)", card: "0 1px 2px rgb(17 17 17 / 0.05)" },
     },
   },
   plugins: [],

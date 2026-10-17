@@ -68,10 +68,10 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "inline-flex select-none items-center justify-center gap-1.5 rounded-full font-semibold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex select-none items-center justify-center gap-1.5 rounded-full font-bold transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50",
         size === "sm" && "h-9 px-3.5 text-[13px]",
         size === "md" && "h-11 px-4 text-[14px]",
-        size === "lg" && "h-12 px-5 text-[15px]",
+        size === "lg" && "h-12 px-5 text-[16px]",
         kind === "primary" && "bg-brand text-on-brand shadow-sm hover:bg-brand/90",
         kind === "secondary" && "bg-sunk text-ink hover:bg-line",
         kind === "ghost" && "text-ink-2 hover:bg-sunk",
@@ -128,7 +128,7 @@ export function Card({ children, className, onClick, look = "card" }: { children
       onClick={onClick}
       className={cn(
         "block w-full text-left",
-        look === "card" && "rounded-card bg-card shadow-[0_1px_2px_rgb(20_10_40/0.06)] ring-1 ring-line/70",
+        look === "card" && "rounded-card bg-card shadow-card ring-1 ring-line/70",
         look === "brand" && "rounded-card bg-brand text-on-brand shadow-float",
         look === "flat" && "bg-card",
         look === "dashed" && "rounded-card border border-dashed border-line",
@@ -144,7 +144,7 @@ export function Card({ children, className, onClick, look = "card" }: { children
 export function SectionHead({ title, action }: { title: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex items-end justify-between px-1 pb-2 pt-5">
-      <h2 className="text-[13px] font-semibold uppercase tracking-wide text-ink-3">{title}</h2>
+      <h2 className="allcaps text-ink-3">{title}</h2>
       {action}
     </div>
   );
@@ -231,7 +231,7 @@ export function Sheet({ open, onClose, title, children }: { open: boolean; onClo
       <button aria-label="Close" className="absolute inset-0 bg-ink/40" onClick={onClose} />
       <div className="sheet-in relative max-h-[88%] overflow-y-auto rounded-t-[24px] bg-card pb-6 shadow-float">
         <div className="sticky top-0 z-10 flex items-center justify-between bg-card px-5 pb-2 pt-4">
-          <h2 className="text-[18px] font-bold">{title}</h2>
+          <h2 className="display text-[18px]">{title}</h2>
           <button onClick={onClose} aria-label="Close" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-sunk text-ink-2">
             <X size={18} />
           </button>

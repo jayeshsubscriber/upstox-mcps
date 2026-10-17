@@ -211,7 +211,7 @@ export function Ask({
     <div className="flex min-h-full flex-col">
       <div className="flex items-start justify-between px-4 pt-4">
         <div>
-          <h1 className="text-[24px] font-bold">Ask your team</h1>
+          <h1 className="display text-[24px]">Ask your team</h1>
           <p className="mt-0.5 text-[14px] text-ink-2">Questions about your money, in plain words. Anything it drafts waits for your OK.</p>
         </div>
         {items.length > 0 && !live && (

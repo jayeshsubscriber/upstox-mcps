@@ -21,7 +21,7 @@ export function ChartCard({ card }: { card: Extract<CardType, { type: "chart" }>
   return (
     <Card className="mt-2 overflow-hidden p-3.5">
       <div className="flex items-center justify-between">
-        <p className="text-[14px] font-bold">
+        <p className="text-[14px] font-semibold">
           {card.symbol} <span className="font-normal text-ink-3">· {card.period}</span>
         </p>
         <Pill tone={up ? "pos" : "neg"}>{pct(card.changePct)}</Pill>

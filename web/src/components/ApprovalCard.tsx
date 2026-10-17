@@ -66,7 +66,7 @@ export function ApprovalCard({
           <Pill tone={side.tone} className="mt-0.5">
             {side.word}
           </Pill>
-          <h3 className="text-[17px] font-bold leading-snug">{r.title.replace(/^(Buy|Sell|Stop-loss:|Buy trigger:|Tender)\s*/, "")}</h3>
+          <h3 className="display text-[17px] leading-snug">{r.title.replace(/^(Buy|Sell|Stop-loss:|Buy trigger:|Tender)\s*/, "")}</h3>
         </div>
         <p className="mt-1.5 text-[14px] leading-snug text-ink-2">{r.reason}</p>
 

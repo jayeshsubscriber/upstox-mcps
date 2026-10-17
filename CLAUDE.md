@@ -78,7 +78,12 @@ Supabase table, so sign in with a test email.
 - **Design like a retail consumer app** (the owner's standing rule): plain words, one
   obvious main button per screen, phone first (375 px, 44 px targets, no sideways
   scroll), Undo toasts instead of "are you sure?", money confirmed by sliding, colour
-  tokens from `web/src/styles.css` only.
+  tokens from `web/src/styles.css` only. The tokens and type follow Upstox's own design
+  system (upstox.com): purple `#542087`, untinted greys, Inter with Upstox's features
+  (`cv05` tailed l, `ss07`/`ss08`, `dlig`), headings in Inter Display (class `display`:
+  semibold, optical size 32), small caps labels `allcaps`, bold buttons. The font is
+  self-hosted (`web/src/fonts/`, a subset of Inter 4.1, OFL); the npm Inter builds drop
+  those features.
 - **Claude API:** default `claude-sonnet-5-5`, Opus 5.5 switchable per person. Always
   pass `effort` (Sonnet 5.5 defaults to high). Don't send `thinking: {type: "disabled"}`
   or a forced `tool_choice` (both are rejected). Keep the conversation append-only.

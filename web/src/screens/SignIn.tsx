@@ -35,7 +35,7 @@ export function SignIn({ domain, onDone }: { domain: string; onDone: (firstTime:
         <span className="text-[26px] font-extrabold tracking-tight text-brand">upstox</span>
         <Pill tone="brand">Agents</Pill>
       </div>
-      <h1 className="mt-6 text-[26px] font-bold leading-tight">Your own team of investing agents</h1>
+      <h1 className="display mt-6 text-[26px] leading-tight">Your own team of investing agents</h1>
       <p className="mt-2 text-[15px] text-ink-2">They watch your portfolio and ask before anything happens. An internal preview for the Upstox team.</p>
 
       <form
