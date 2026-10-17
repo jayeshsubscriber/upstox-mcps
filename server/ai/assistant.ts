@@ -30,6 +30,20 @@ export function nowLine(now = new Date()): string {
   return `${when} IST · market ${open ? "open" : "closed"}`;
 }
 
+/** Where this question's numbers come from. Goes in the user turn, so a change (demo → your account) shows in the conversation. */
+export function sourceLine(ctx: ToolCtx): string {
+  return `${ctx.broker.account === "upstox" ? "your Upstox account" : "a demo portfolio"}, ${ctx.market.source === "upstox" ? "live Upstox prices" : "demo prices"}`;
+}
+
+/** The data source the last question was asked with: undefined if there was no earlier question, null if it didn't say. */
+function lastSource(messages: Msg[]): string | null | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "user" && typeof m.content === "string") return /· data: ([^.<]+)/.exec(m.content)?.[1] ?? null;
+  }
+  return undefined;
+}
+
 /** Drops the oldest questions (with their answers and tool steps) once the history is long. */
 export function trimHistory(messages: Msg[]): Msg[] {
   if (messages.length <= MAX_MESSAGES) return messages;
@@ -81,7 +95,11 @@ export class Assistant {
       };
       const item: ChatItem = { id: randomUUID().slice(0, 8), role: "assistant", at: new Date().toISOString(), parts: [] };
       emit({ type: "start", itemId: item.id });
-      const userMsg: Msg = { role: "user", content: `<context>${nowLine()}</context>\n${action ? actionTurn(action) : q}` };
+      const source = sourceLine(ctx);
+      const before = lastSource(thread.messages);
+      // Earlier tool results stay in the history; without this the model reuses the old (e.g. demo) figures.
+      const changed = before !== undefined && before !== source ? ". This changed since the earlier questions in this chat, so figures from those answers are out of date" : "";
+      const userMsg: Msg = { role: "user", content: `<context>${nowLine()} · data: ${source}${changed}</context>\n${action ? actionTurn(action) : q}` };
       const history = trimHistory([...thread.messages, userMsg]);
       // Parts in the order they happened: text, a tool step, more text…
       const parts: ChatPart[] = [];

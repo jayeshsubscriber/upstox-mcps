@@ -283,6 +283,10 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
   - A key that isn't scoped to a workspace needs the `anthropic-workspace-id` header on
     every request (`ANTHROPIC_WORKSPACE_ID`).
   - A refused turn isn't kept in history.
+  - Old tool results stay in the chat history, and the model will happily reuse them.
+    After someone connected Upstox, the chat kept answering from the demo portfolio.
+    So each question's `<context>` says where the data comes from, flags a change,
+    and the prompt says to call the tools again for every number.
 - **A2UI (screens):**
   - `@a2ui/react` 0.13.0 depends on `@a2ui/markdown-it` `^0.2.1`, and 0.2.2 wants
     web_core 0.14: `package.json` overrides it to 0.2.1 (and `dompurify` to 3.4.16).
