@@ -106,11 +106,13 @@ How screens work, in one pass:
   (test account, after the workspace fix). Chat answer quality, cost per question, and
   whether answers stay on the "information, not advice" side are still unknown.
   Suggested check: 20 real questions on Sonnet 5.5 vs Opus 5.5.
-- **Screens with real Claude.** Verified only with a scripted stand-in. Check that
-  Sonnet 5.5 builds valid, phone-sized screens when it should (and not for plain
-  answers), how often it needs a `VALIDATION_FAILED` retry, and what the catalog in the
-  `show_ui` description adds to each chat's cost. Try: "Help me start a SIP", "Compare
-  INFY and TCS", "Which holdings should get a stop-loss?".
+- **Screens with real Claude, beyond one run.** On production (17 Oct, Sonnet 5.5, test
+  account) "I want to start a monthly SIP" gave a valid screen on the first try (fund
+  picked from the holdings, amount, day of the month, one button) in about 9 s; the
+  press filed the order and the screen showed it with its slide, once. Still to check:
+  more questions ("Compare INFY and TCS", "Which holdings should get a stop-loss?"), that
+  it doesn't build screens for plain answers, how often it needs a `VALIDATION_FAILED`
+  retry, and what the catalog in the `show_ui` description adds to each chat's cost.
 - **Upstox daily login with a real Upstox app:** the code exchange and token save after
   Upstox redirects back.
 - **Real holdings through a real access token**, and the analytics token's success path
@@ -313,4 +315,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `83fb2a0` | Failed Claude uses don't count; brief notes the daily limit; migration `agents_prototype_refund` |
 | `f26b99b` | Daily limits off unless `DAILY_LIMITS=on` (the owner's call, 16 Oct 2026) |
 | `2665d15` | Sign-ins last until sign-out unless `SESSION_HOURS` is set |
-| (next) | Screens the assistant builds (A2UI v0.9): `show_ui`, the Upstox catalog, server checks, renderer, presses as turns |
+| `b85eb9d` | Screens the assistant builds (A2UI v0.9): `show_ui`, the Upstox catalog, server checks, renderer, presses as turns |
+| (next) | Handover: screens checked with real Claude on production |
