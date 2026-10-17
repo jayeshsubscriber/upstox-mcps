@@ -22,6 +22,9 @@ don't build the same thing or edit the same files at once. Remove the row once i
   customers will use agents to trade. The CTO's view: MCPs will become crowded and are
   a means to an end. Users want **agents that do work for them** (like Grok Bot or
   Meta Muse), and **each user should have their own personalised team of agents**.
+- **The current direction is in [VISION.md](VISION.md)** (17 Oct 2026): truly agentic
+  trading where the customer's Approve is the only human step, customer-built agents,
+  and the full capability roadmap. It supersedes the older framing below where they differ.
 - **Where we landed** (see [STRATEGY.md](STRATEGY.md)): Upstox builds a
   **specialist money team** (one assistant, specialists behind it, each with its own
   limits) on a **trust platform** (mandates, approvals, audit). External MCP becomes a

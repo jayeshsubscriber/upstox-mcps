@@ -5,6 +5,9 @@ conversations (Oct 2026). These are working views to take to leadership and
 compliance, not decisions Upstox has made. Facts about competitors and rules were
 checked on the web at the time; recheck before quoting them.
 
+> **Superseded in direction by [VISION.md](VISION.md) (17 Oct 2026).** This file keeps
+> the earlier reasoning; where they differ, VISION.md wins.
+
 ## The question
 
 - **The cofounder:** build an **MCP roadmap**, because customers will use agents to

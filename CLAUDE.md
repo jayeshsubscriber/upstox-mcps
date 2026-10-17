@@ -4,7 +4,9 @@ An internal prototype, built by an Upstox PM (Jayesh), of **a personal team of A
 agents inside the Upstox app**. Its purpose is to show leadership what "agents that
 do investing work for you" looks like. It is not a production Upstox product.
 
-**Read [docs/HANDOVER.md](docs/HANDOVER.md) before starting work.** It covers the
+**Start with [docs/VISION.md](docs/VISION.md)**: the complete brief on what we are
+building and why, the market, the owner's standing decisions, and the full roadmap of
+what to build for agents. Then **read [docs/HANDOVER.md](docs/HANDOVER.md) before starting work.** It covers the
 current state, what's verified and what isn't, how to work alongside the other
 laptop, and what's next. [docs/STRATEGY.md](docs/STRATEGY.md) has the product
 thinking behind it, and [docs/PRODUCT.md](docs/PRODUCT.md) the step-by-step plan.
