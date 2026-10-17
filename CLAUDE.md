@@ -21,7 +21,7 @@ practice fills or go to Upstox's sandbox. Don't add one.
 ```bash
 npm install
 npm run dev            # app http://localhost:5173, API :8787 (local mode: one person, files in data/)
-npm test               # 52 tests: approval engine, AI layer (scripted model), hosted pieces
+npm test               # 69 tests: approval engine, AI layer (scripted model), screens, hosted pieces
 npm run typecheck
 npm run build          # run before every push
 npm run vercel-build   # the Vercel output in .vercel/output
@@ -44,6 +44,7 @@ Supabase table, so sign in with a test email.
 | Upstox REST client, token checks, daily login (OAuth) | `server/upstox.ts`; candles, news, fundamentals `server/data.ts` |
 | Prices (live, or demo drift around real closes) | `server/market.ts`; holdings, charges, fills `server/broker.ts` |
 | Claude: client, tools, loop, prompts, chat, agent runs, brief | `server/ai/` |
+| Screens the assistant builds (A2UI v0.9): catalog, checks, renderer | catalog `shared/a2ui.ts`; `show_ui` checks and presses `server/ai/ui.ts`; renderer (lazy chunk) `web/src/a2ui/` (`components.tsx`, `runtime.tsx`, `host.ts`); in the chat `web/src/screens/Ask.tsx` |
 | Settings from the environment | `server/config.ts` |
 | App screens | `web/src/screens/` (Home, Ask, Approvals, Agents, Activity, Settings, SignIn); kit `web/src/components/ui.tsx`; polling `web/src/api.ts` |
 | Vercel build (Build Output API, function in bom1) | `scripts/build-vercel.ts`, `vercel.json` |
@@ -60,6 +61,14 @@ Supabase table, so sign in with a test email.
 - **Numbers come from code, never from the model.** Tools compute every figure;
   the model explains it.
 - **The server enforces each agent's limits** whatever the model asks for.
+- **Screens (A2UI) can't act.** A screen's buttons only send the user's choices back to
+  the assistant or open a tab; a filed request shows as `OrderRequest`, the normal
+  approval card. Never add a component or function that places, approves or links out
+  (`openUrl` is left out on purpose). Every screen passes A2UI's strict processor on the
+  server first. Add a component in `shared/a2ui.ts` (schema + a line in `CATALOG_GUIDE`)
+  and draw it in `web/src/a2ui/components.tsx`; `test/screens.test.ts` checks the guide
+  lists every component. `@a2ui/*` are pinned to 0.13.0 (with `@a2ui/markdown-it` held
+  at 0.2.1); upgrade them together and rerun the tests.
 - **Hosted mode never uses `.env` Upstox tokens**: each person's own only.
 - **Database:** the Supabase project is "Scanners" (`bvxsqcoprnggxlpqkmcz`), shared
   with the owner's other app, `custom-screener`. This app owns only `public.agents_kv`

@@ -4,6 +4,7 @@
  * on a laptop server and on Vercel. A 401 anywhere sends you to sign-in.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { UiAction } from "../../shared/a2ui";
 import type { AppState, ApproveOutcome, Brief, ChatEvent, ChatItem, Mandate, Me, Mode, ModelId, OrderRequest, SettingsInfo, UpstoxStatus } from "../../shared/types";
 
 /** Fired after every change we make (re-read the state now) and when the session ends. */
@@ -57,8 +58,10 @@ export const api = {
 };
 
 /** Sends a question and calls `on` for each streamed event (Server-Sent Events over a POST). */
-export async function askStream(text: string, on: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void> {
-  const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }), signal, credentials: "same-origin" });
+/** Asks a question, or sends a press on one of the assistant's screens, and streams the answer. */
+export async function askStream(input: string | { action: UiAction }, on: (e: ChatEvent) => void, signal?: AbortSignal): Promise<void> {
+  const payload = typeof input === "string" ? { text: input } : input;
+  const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal, credentials: "same-origin" });
   if (!r.ok || !r.body) {
     const j = await r.json().catch(() => ({}));
     if (r.status === 401) bus.dispatchEvent(new Event("signed-out"));

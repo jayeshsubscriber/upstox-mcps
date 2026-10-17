@@ -3,7 +3,8 @@
  * locally, Supabase hosted). The API history is append-only; once it gets
  * long, the oldest questions are dropped whole (at a question boundary, so
  * what's left is still a valid conversation). The app shows a simpler list of
- * items (text, tool steps, charts, request cards).
+ * items (text, tool steps, charts, request cards, screens). A press on a
+ * screen's button comes in as the user's next turn.
  */
 import { randomUUID } from "node:crypto";
 import type { ChatEvent, ChatItem, ChatPart, ModelId } from "../../shared/types";
@@ -12,6 +13,7 @@ import { runLoop } from "./loop";
 import type { ModelClient, Msg } from "./model";
 import { ASSISTANT_SYSTEM } from "./prompts";
 import { toolDefs, type ToolCtx } from "./tools";
+import { actionTurn, uiCards, UiSession } from "./ui";
 
 /** History sent to the model: past this many messages, drop the oldest questions down to KEEP_MESSAGES. */
 const MAX_MESSAGES = 80;
@@ -56,19 +58,30 @@ export class Assistant {
     await this.chat.finish({ messages: [], items: [] });
   }
 
-  /** Answers one message, streaming events. Returns the assistant's item. */
-  async ask(text: string, emit: (e: ChatEvent) => void, signal?: AbortSignal): Promise<ChatItem> {
+  /** Answers one message, or a press on a screen ({ action }), streaming events. Returns the assistant's item. */
+  async ask(input: string | { action: unknown }, emit: (e: ChatEvent) => void, signal?: AbortSignal): Promise<ChatItem> {
     if (!this.model.available) throw new Error("Claude isn't set up on this server (ANTHROPIC_API_KEY)");
-    const q = text.trim().slice(0, 2000);
-    if (!q) throw new Error("Ask something");
+    const q = typeof input === "string" ? input.trim().slice(0, 2000) : "";
+    if (typeof input === "string" && !q) throw new Error("Ask something");
     if (!(await this.chat.begin())) throw new BusyError("Still answering your last question");
     let saved: Thread | null = null;
     try {
       const thread = await this.chat.load();
-      const userItem: ChatItem = { id: randomUUID().slice(0, 8), role: "user", at: new Date().toISOString(), parts: [{ type: "text", text: q }] };
+      const ctx = this.ctx();
+      ctx.ui = new UiSession(uiCards(thread.items), {
+        requestExists: (id) => ctx.engine.state.requests.some((r) => r.id === id),
+        symbolExists: (s) => !!ctx.book.get(s.trim().toUpperCase().replace(/^NSE:/, "")),
+      });
+      const action = typeof input === "string" ? null : ctx.ui.action(input.action);
+      const userItem: ChatItem = {
+        id: randomUUID().slice(0, 8),
+        role: "user",
+        at: new Date().toISOString(),
+        parts: action ? [{ type: "action", surfaceId: action.surfaceId, name: action.name, label: action.label ?? action.name, ...(action.data ? { data: action.data } : {}) }] : [{ type: "text", text: q }],
+      };
       const item: ChatItem = { id: randomUUID().slice(0, 8), role: "assistant", at: new Date().toISOString(), parts: [] };
       emit({ type: "start", itemId: item.id });
-      const userMsg: Msg = { role: "user", content: `<context>${nowLine()}</context>\n${q}` };
+      const userMsg: Msg = { role: "user", content: `<context>${nowLine()}</context>\n${action ? actionTurn(action) : q}` };
       const history = trimHistory([...thread.messages, userMsg]);
       // Parts in the order they happened: text, a tool step, more text…
       const parts: ChatPart[] = [];
@@ -80,9 +93,9 @@ export class Assistant {
         model: this.model,
         modelId: this.modelId(),
         system: ASSISTANT_SYSTEM,
-        tools: toolDefs({ canFile: true }),
+        tools: toolDefs({ canFile: true, chat: true }),
         history,
-        ctx: this.ctx(),
+        ctx,
         canFile: true,
         signal,
         emit: (e) => {

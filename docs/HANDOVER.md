@@ -1,9 +1,10 @@
 # Handover: picking up the Upstox Agents prototype
 
 Written on 16 Oct 2026, at the end of the first build session (one Claude Code cloud
-session, Steps 1 to 2½). The work continues from two laptops with different Claude
-accounts. This file, `CLAUDE.md` and the other docs replace that session's chat
-history, which can't be shared.
+session, Steps 1 to 2½); updated 17 Oct 2026 for screens the assistant builds (A2UI).
+The work continues from two laptops with different Claude accounts. This file,
+`CLAUDE.md` and the other docs replace that session's chat history, which can't be
+shared.
 
 ## In progress (keep this table current)
 
@@ -38,6 +39,7 @@ don't build the same thing or edit the same files at once. Remove the row once i
 | 1. Trust layer | Approval cards, slide to approve, batches (all or nothing, sells first), 0.5% price band with re-pricing on the tick, expiry, per-agent mandates and monthly pots, pause one or all, Undo, edit, activity log, practice fills and Upstox sandbox | Built |
 | 2. Assistant | Claude chat (Ask tab) with tools over holdings, prices, charts, news and fundamentals; drafted orders appear as cards; agents that reason with Claude under their own mandate and leave a note; morning brief | Built |
 | 2½. Shared preview | Sign-in (work email + access code + 6-digit PIN), each person's own state, Upstox connection in Settings (encrypted), one Claude key (daily limits built in, off for now), model switch, Supabase storage, Vercel hosting | Built and deployed |
+| 2¾. Screens (A2UI) | The assistant builds small screens in the chat with A2UI v0.9 (Google's open format): our 21-component catalog drawn with the app's kit, checked on the server by A2UI's strict processor, presses sent back as the next turn, screens updated in place and replayed after a reload | Built (17 Oct), merged to `main` |
 | 3. Specialist team on real data | Real tax lots, corporate actions, risk watchdog, trading coach, F&O builder | **Next** |
 | 4. Your own agents | "Create an agent" and "Watch & propose" rules | Later |
 | 5. Ecosystem | MCP server with draft-only tools, Agent Apps | Later |
@@ -50,12 +52,42 @@ watchdog, Corporate actions, F&O strategist (paused by default) and Trading coac
 Tools the model can call (`server/ai/tools.ts`): `get_portfolio`, `get_quotes`,
 `get_price_history` (returns a chart card), `get_news`, `get_fundamentals`,
 `get_team`, and two that only **file** requests: `propose_order` and
-`propose_stop_loss`.
+`propose_stop_loss`. The chat (not agent checks or the brief) also has `show_ui`, which
+builds a screen (`server/ai/ui.ts`, catalog in `shared/a2ui.ts`).
+
+How screens work, in one pass:
+- The model calls `show_ui` with a `surface_id`, a flat list of A2UI components and the
+  screen's data. The server turns that into A2UI messages (`createSurface` with our
+  catalog id and `sendDataModel`, `updateComponents`, `updateDataModel`) and replays
+  them, after the screen's earlier messages, through `@a2ui/web_core`'s
+  `MessageProcessor` with strict validation (orphans allowed). Our own checks: an
+  `OrderRequest` must name a filed request, `Quote`/`PriceChart` a real NSE symbol, at
+  most 80 components and 24 KB. A failure returns `VALIDATION_FAILED` to the model.
+- The checked messages are saved as a chat card `{type: "ui", surfaceId, messages}`.
+  The app keeps one `MessageProcessor` per chat (`web/src/a2ui/runtime.tsx`), replays
+  every card in order, and draws each screen at the latest card that touched it.
+- A press (an `event` action) is POSTed to `/api/chat` as `{action}` with the screen's
+  data; the server checks the screen is in the chat, takes the button's own label, saves
+  a user item `{type: "action", label, data}` and gives the model
+  `<ui_action surface=… name=… button=…>{context, data}</ui_action>`. On a reload, a
+  press's data is put back on its screen, so forms show what was entered.
+- `Quote` and `PriceChart` fetch `/api/market/quotes` and `/api/market/chart`;
+  `Holdings` and `OrderRequest` read the app state. A request shown inside an open
+  screen isn't shown a second time as its own card.
 
 ## 3. What's verified, and what isn't
 
 **Verified**
-- 52 tests pass (engine 22, AI layer 14 with a scripted model, hosted pieces 16).
+- 69 tests pass (engine 22, AI layer 17 with a scripted model, screens 8, Claude
+  errors 5, hosted pieces 17).
+- Screens, end to end in Chromium at 375 px, with a stand-in for the Claude API that
+  streams real `show_ui` calls (17 Oct): the SIP form draws with live quotes; a failing
+  check disables the button with its message; inputs, slider, switch and stepper write
+  the data; the press reaches the model with the button's words and the data; the order
+  it files appears once, inside the screen, and sliding there fills it; a reload brings
+  the screen back as it was; tabs, charts, table, bars and `openScreen` work; a broken
+  screen is fixed by the model after `VALIDATION_FAILED`; no sideways scroll, no console
+  errors.
 - The exact Vercel bundle, run locally against the real Supabase tables:
   - sign-in and PIN lockout;
   - two people's data kept apart;
@@ -70,11 +102,15 @@ Tools the model can call (`server/ai/tools.ts`): `get_portfolio`, `get_quotes`,
   set up yet" only because the environment variables weren't there yet.
 
 **Not verified yet (do these first)**
-- **No real Claude answer has come back yet.** The build session had no API key. On
-  Vercel, the first key was refused because it isn't tied to a workspace; the app now
-  says so in plain words and accepts `ANTHROPIC_WORKSPACE_ID`. Answer quality, cost per
-  question, and whether answers stay on the "information, not advice" side are still
-  unknown. Suggested check: 20 real questions on Sonnet 5.5 vs Opus 5.5.
+- **Claude's answers in depth.** A real Claude brief came back on production on 16 Oct
+  (test account, after the workspace fix). Chat answer quality, cost per question, and
+  whether answers stay on the "information, not advice" side are still unknown.
+  Suggested check: 20 real questions on Sonnet 5.5 vs Opus 5.5.
+- **Screens with real Claude.** Verified only with a scripted stand-in. Check that
+  Sonnet 5.5 builds valid, phone-sized screens when it should (and not for plain
+  answers), how often it needs a `VALIDATION_FAILED` retry, and what the catalog in the
+  `show_ui` description adds to each chat's cost. Try: "Help me start a SIP", "Compare
+  INFY and TCS", "Which holdings should get a stop-loss?".
 - **Upstox daily login with a real Upstox app:** the code exchange and token save after
   Upstox redirects back.
 - **Real holdings through a real access token**, and the analytics token's success path
@@ -168,8 +204,8 @@ phone / laptop ──▶ Vercel, Mumbai (bom1)
 
 From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this order:
 
-1. **Verify with real keys** (section 3): Claude answers, Upstox login, holdings,
-   analytics, sandbox from Vercel.
+1. **Verify with real keys** (section 3): Claude answers and screens, Upstox login,
+   holdings, analytics, sandbox from Vercel.
 2. **Step 3, specialist team on real data.** Lead with what Robinhood doesn't have:
    - **Tax agent:** real lots and LTCG/STCG from Upstox's trade P&L reports, the
      ₹1.25 lakh exemption, loss harvesting. Today it assumes shares are over a year old.
@@ -205,6 +241,10 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
   signed-in person. That's intended for demos.
 - Polling every 3 s costs function calls. It's fine for a few dozen people; move to
   a push channel if it grows.
+- Screens: what someone types into a screen and doesn't send is lost on a reload (only
+  a press saves the data). Screens are kept in the chat document, so a chat with many
+  big screens is a bigger row; the chat keeps its latest 120 items, and a screen whose
+  first card ages out is treated as gone. Agents' own requests can't carry screens yet.
 
 ## 9. Gotchas learned the hard way
 
@@ -241,6 +281,20 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
   - A key that isn't scoped to a workspace needs the `anthropic-workspace-id` header on
     every request (`ANTHROPIC_WORKSPACE_ID`).
   - A refused turn isn't kept in history.
+- **A2UI (screens):**
+  - `@a2ui/react` 0.13.0 depends on `@a2ui/markdown-it` `^0.2.1`, and 0.2.2 wants
+    web_core 0.14: `package.json` overrides it to 0.2.1 (and `dompurify` to 3.4.16).
+    Neither is in our bundle; the renderer never imports them.
+  - The basic `length` check takes text only; for a ChoicePicker use `required`.
+  - The React renderer wraps each component in a custom element with
+    `display: contents`, so flex layouts work, but a `> *` selector hits the wrapper:
+    style children from the parent's own wrappers (see `Row` in `components.tsx`).
+  - Importing the renderer needs `HTMLElement` to exist; the runtime test stubs it.
+  - The streaming answer and the saved one share the item id, so the chat keeps the same
+    message (and its screen) mounted when an answer ends. Remounting made the chat
+    collapse for a frame and jump to the top.
+  - zod-to-json-schema warns about recursive types when building the catalog's JSON
+    Schema (`/api/a2ui/catalog`); `catalogSchema()` mutes that.
 - **Agent shells in cloud sessions:**
   - `pkill -f <pattern>` can kill your own shell; kill by process id instead.
   - Playwright's browser is at `/opt/pw-browsers/chromium`.
@@ -258,4 +312,5 @@ From [PRODUCT.md](PRODUCT.md) and the session's conversations, roughly in this o
 | `3d2eb50` | Claude errors in plain words; brief falls back when Claude fails; `ANTHROPIC_WORKSPACE_ID` |
 | `83fb2a0` | Failed Claude uses don't count; brief notes the daily limit; migration `agents_prototype_refund` |
 | `f26b99b` | Daily limits off unless `DAILY_LIMITS=on` (the owner's call, 16 Oct 2026) |
-| (next) | Sign-ins last until sign-out unless `SESSION_HOURS` is set |
+| `2665d15` | Sign-ins last until sign-out unless `SESSION_HOURS` is set |
+| (next) | Screens the assistant builds (A2UI v0.9): `show_ui`, the Upstox catalog, server checks, renderer, presses as turns |

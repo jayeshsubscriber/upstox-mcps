@@ -144,3 +144,17 @@ body {
 .no-scrollbar {
   scrollbar-width: none;
 }
+
+/* A Quote on the assistant's screens: in a narrow spot the price goes under the name. */
+.quote {
+  container-type: inline-size;
+}
+@container (max-width: 220px) {
+  .quote-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .quote-price {
+    text-align: left;
+  }
+}

@@ -147,6 +147,61 @@ describe("assistant chat", () => {
   });
 });
 
+describe("screens in the chat (A2UI)", () => {
+  const screen = {
+    surface_id: "pick",
+    components: [
+      { id: "root", component: "Column", children: ["fund", "go"] },
+      { id: "fund", component: "ChoicePicker", options: [{ label: "Infosys", value: "INFY" }, { label: "ITC", value: "ITC" }], value: { path: "/pick" } },
+      { id: "go", component: "Button", label: "Draft the order", style: "primary", action: { event: { name: "draft", context: { pick: { path: "/pick" } } } } },
+    ],
+    data: { pick: ["ITC"] },
+  };
+
+  it("a screen the model builds is checked, shown as a card and kept in the chat; a press comes back as the next turn", async () => {
+    const model = new ScriptedModel([
+      // A broken screen first: the model gets VALIDATION_FAILED and fixes it.
+      [call("show_ui", { surface_id: "pick", components: [{ id: "root", component: "Sparkle" }] })],
+      [call("show_ui", screen)],
+      [text("Pick one.")],
+      [call("propose_order", { symbol: "ITC", side: "BUY", quantity: 5, reason: "You picked ITC" })],
+      [text("Drafted.")],
+    ]);
+    const chat = tmpChat();
+    const a = new Assistant(model, () => ctxFor("assistant"), chat);
+    const item = await a.ask("Help me pick", () => {});
+    const failed = (model.seen[1].messages.at(-1)!.content as { is_error?: boolean; content: string }[])[0];
+    expect(failed.is_error).toBe(true);
+    expect(JSON.parse(failed.content.replace(/ Fix it.*$/, ""))).toMatchObject({ error: { code: "VALIDATION_FAILED", surfaceId: "pick" } });
+    const cards = item.parts.flatMap((p) => (p.type === "card" && p.card.type === "ui" ? [p.card] : []));
+    expect(cards).toHaveLength(1);
+    expect(cards[0].messages.map((m) => Object.keys(m)[1])).toEqual(["createSurface", "updateComponents", "updateDataModel"]);
+
+    const events: ChatEvent[] = [];
+    await a.ask({ action: { surfaceId: "pick", name: "draft", sourceComponentId: "go", context: { pick: ["ITC"] }, data: { pick: ["ITC"] } } }, (e) => events.push(e));
+    // The model reads the press as a turn of its own, with the button's words and the screen's data.
+    expect(model.seen[3].messages.at(-1)!.content).toMatch(/<ui_action surface="pick" name="draft" button="Draft the order">\n\{"context":\{"pick":\["ITC"\]\},"data":\{"pick":\["ITC"\]\}\}\n<\/ui_action>$/);
+    const saved = await chat.load();
+    expect(saved.items.at(-2)!.parts).toEqual([{ type: "action", surfaceId: "pick", name: "draft", label: "Draft the order", data: { pick: ["ITC"] } }]);
+    // Still only a request: nothing placed.
+    expect(engine.state.requests[0]).toMatchObject({ status: "pending", agentId: "assistant" });
+    expect(broker.placed).toHaveLength(0);
+  });
+
+  it("a press on a screen that isn't in the chat is refused before Claude is asked", async () => {
+    const model = new ScriptedModel([]);
+    const a = new Assistant(model, () => ctxFor("assistant"), tmpChat());
+    await expect(a.ask({ action: { surfaceId: "nope", name: "x", sourceComponentId: "b" } }, () => {})).rejects.toThrow(/isn't in this chat/);
+    expect(model.seen).toHaveLength(0);
+  });
+
+  it("only the chat can build screens; agents and the brief can't", () => {
+    expect(toolDefs({ canFile: true, chat: true }).map((t) => t.name)).toContain("show_ui");
+    expect(toolDefs({ canFile: true }).map((t) => t.name)).not.toContain("show_ui");
+    expect(toolDefs({ canFile: false }).map((t) => t.name)).not.toContain("show_ui");
+  });
+});
+
 describe("tool safety", () => {
   it("bad input goes back to the model as an error and runs nothing", async () => {
     const model = new ScriptedModel([[call("propose_order", { symbol: "INFY", side: "HOLD", reason: "x" })], [text("Sorry.")]]);

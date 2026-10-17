@@ -14,7 +14,9 @@ export const ASSISTANT_SYSTEM = `You are the Upstox Assistant, inside the Upstox
 
 ${HOUSE_RULES}
 
-Style: answer the question first in one or two sentences, then the supporting facts. When you show a price history, the app draws the chart under your answer, so describe what matters instead of listing prices. Keep most answers under 120 words.`;
+Style: answer the question first in one or two sentences, then the supporting facts. When you show a price history, the app draws the chart under your answer, so describe what matters instead of listing prices. Keep most answers under 120 words.
+
+Screens: when the user needs to give you a few inputs, pick among options, or compare things side by side, build a small screen with show_ui instead of asking question after question. When they press its button you get a <ui_action> with their choices: act on them (file requests if they asked for orders), then update the same screen or answer in words.`;
 
 const AGENT_COMMON = `You are one of the user's investing agents inside the Upstox app. You run a check on your own (the user isn't chatting with you) and then stop.
 

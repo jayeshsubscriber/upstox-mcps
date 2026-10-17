@@ -3,6 +3,7 @@
  * computed here; the two propose tools only file requests into the
  * approval engine. No tool places an order.
  */
+import { CATALOG_GUIDE } from "../../shared/a2ui";
 import { price } from "../../shared/format";
 import type { AppState, Card, OrderRequest } from "../../shared/types";
 import type { Broker } from "../broker";
@@ -13,6 +14,7 @@ import type { InstrumentBook } from "../instruments";
 import type { MarketData } from "../market";
 import { roundTick } from "../upstox";
 import type { ToolDef } from "./model";
+import { UiValidationError, type ShowUiInput, type UiSession } from "./ui";
 
 export interface ToolCtx {
   engine: ApprovalEngine;
@@ -23,6 +25,8 @@ export interface ToolCtx {
   agentId: string;
   /** The person's Upstox token for news and fundamentals, if they connected one. */
   dataToken: string | null;
+  /** Screens in this chat (show_ui). Only the chat has one. */
+  ui?: UiSession;
 }
 
 export interface ToolOutput {
@@ -37,8 +41,8 @@ export interface ToolOutput {
 
 type Prop =
   | { type: "string"; description: string; enum?: string[] }
-  | { type: "number" | "integer"; description: string }
-  | { type: "array"; description: string; items: { type: "string" } };
+  | { type: "number" | "integer" | "boolean" | "object"; description: string }
+  | { type: "array"; description: string; items: { type: "string" | "object" } };
 
 interface Spec {
   name: string;
@@ -50,7 +54,11 @@ interface Spec {
   run: (input: Record<string, unknown>, ctx: ToolCtx) => Promise<ToolOutput>;
   /** Only tools that file requests are left out of read-only runs. */
   files?: boolean;
+  /** Only offered in the chat (screens need someone looking). */
+  chat?: boolean;
 }
+
+const isObject = (x: unknown) => !!x && typeof x === "object" && !Array.isArray(x);
 
 /** Validates model-supplied input against the spec; returns a reason or null. */
 export function invalidInput(spec: Pick<Spec, "props" | "required">, input: unknown): string | null {
@@ -64,7 +72,10 @@ export function invalidInput(spec: Pick<Spec, "props" | "required">, input: unkn
     if (p.type === "string" && (typeof v !== "string" || (p.enum && !p.enum.includes(v)))) return `${k} must be ${p.enum ? `one of ${p.enum.join(", ")}` : "a string"}`;
     if (p.type === "number" && (typeof v !== "number" || !Number.isFinite(v))) return `${k} must be a number`;
     if (p.type === "integer" && (typeof v !== "number" || !Number.isInteger(v))) return `${k} must be a whole number`;
-    if (p.type === "array" && (!Array.isArray(v) || v.some((x) => typeof x !== "string"))) return `${k} must be a list of strings`;
+    if (p.type === "boolean" && typeof v !== "boolean") return `${k} must be true or false`;
+    if (p.type === "object" && !isObject(v)) return `${k} must be an object`;
+    if (p.type === "array" && p.items.type === "string" && (!Array.isArray(v) || v.some((x) => typeof x !== "string"))) return `${k} must be a list of strings`;
+    if (p.type === "array" && p.items.type === "object" && (!Array.isArray(v) || !v.every(isObject))) return `${k} must be a list of objects`;
   }
   return null;
 }
@@ -348,6 +359,53 @@ const SPECS: Spec[] = [
       return { content: json(filed(r)), card: { type: "request", requestId: r.id } };
     },
   },
+
+  // ─── Screens (A2UI) ────────────────────────────────────────────────────────
+  {
+    name: "show_ui",
+    description: `Show the user a small interactive screen under your answer, drawn by the app with its own components.
+
+When: only when a screen beats words: collecting a few inputs (a monthly SIP, a goal), picking among options or holdings, comparing 2 or 3 stocks side by side. Never for a plain answer.
+
+Rules:
+- It's a phone (375 px wide): one Column of short sections, Rows of at most 3 short items, one primary Button. Plain words; buttons say what happens ("Draft my SIP order").
+- Numbers you write on a screen come from tool results, as in text. For prices, charts and holdings use Quote, PriceChart and Holdings: the app fills those in.
+- Never draw your own approve, confirm or place-order button. When the user presses your button you get their choices; then file requests with propose_order or propose_stop_loss and show each with an OrderRequest component. Only the slide on that card approves.
+- Don't repeat the screen in your text; a line before it is enough.
+- To change a screen you showed, call show_ui with its surface_id and only what changes (it moves down to your latest answer). remove: true takes it away.
+
+${CATALOG_GUIDE}`,
+    props: {
+      surface_id: { type: "string", description: "A short id for this screen, like sip_setup. The same id again changes that screen." },
+      components: {
+        type: "array",
+        items: { type: "object" },
+        description: 'The components (A2UI v0.9, a flat list, one with the id "root"). For a screen already shown, only those to add or replace.',
+      },
+      data: { type: "object", description: 'The data that bindings read and inputs fill in, e.g. {"amount": 5000, "fund": ["NIFTYBEES"]}. For a screen already shown, the keys to replace.' },
+      remove: { type: "boolean", description: "Take the screen away" },
+    },
+    required: ["surface_id"],
+    chat: true,
+    label: (i) => (i.remove ? "Closing a screen" : "Building a screen"),
+    run: async (i, ctx) => {
+      if (!ctx.ui) return err("Screens only work in the chat");
+      try {
+        const card = ctx.ui.show(i as unknown as ShowUiInput);
+        return {
+          content: json({
+            shown: true,
+            surface_id: card.surfaceId,
+            note: "The user sees it under your answer. When they press a button with an event, you get a <ui_action> message with its context and the screen's data.",
+          }),
+          card,
+        };
+      } catch (e) {
+        if (e instanceof UiValidationError) return err(`${json(e.toJSON())} Fix it and call show_ui again.`);
+        throw e;
+      }
+    },
+  },
 ];
 
 function filed(r: OrderRequest) {
@@ -364,9 +422,9 @@ function filed(r: OrderRequest) {
 
 export const TOOL_NAMES = SPECS.map((s) => s.name);
 
-/** Tool definitions for the API, in a fixed order so the prompt cache holds. */
-export function toolDefs(opts: { canFile: boolean }): ToolDef[] {
-  return SPECS.filter((s) => opts.canFile || !s.files).map((s) => ({
+/** Tool definitions for the API, in a fixed order so the prompt cache holds. Screens only in the chat. */
+export function toolDefs(opts: { canFile: boolean; chat?: boolean }): ToolDef[] {
+  return SPECS.filter((s) => (opts.canFile || !s.files) && (opts.chat || !s.chat)).map((s) => ({
     name: s.name,
     description: s.description,
     // Inputs stream as generated; validated in runTool before anything runs.

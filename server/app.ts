@@ -8,11 +8,14 @@
 import type http from "node:http";
 import type { ChatEvent, Mandate, Me, Mode, ModelId, ProposeInput, SettingsInfo, UpstoxStatus } from "../shared/types";
 import { ClaudeClient } from "./ai/model";
+import { runTool } from "./ai/tools";
+import { catalogSchema } from "./ai/ui";
 import { clearSessionCookie, sessionCookie, sign, signIn, userOf, verify } from "./auth";
 import { cfg, configProblems, MODELS } from "./config";
 import { runScenarios, SCENARIOS, type Scenario } from "./demo";
 import { openDesk, type Desk, type Shared } from "./desk";
 import { body, HttpError, origin, redirect, send } from "./http";
+import { pctChange } from "./indicators";
 import { InstrumentBook } from "./instruments";
 import { DemoMarket } from "./market";
 import { describeCreds, loadCreds, saveCreds, type UpstoxCreds } from "./secrets";
@@ -68,6 +71,34 @@ const routes: [string, RegExp, Handler][] = [
   ["POST", /^\/api\/agents\/run-all$/, async ({ desk }) => desk.runner.runAll()],
   ["POST", /^\/api\/agents\/([\w-]+)\/run$/, async ({ desk }, [id]) => desk.runner.run(id)],
   ["GET", /^\/api\/chat$/, async ({ desk, S }) => ({ ...(await desk.assistant.load()), claude: S.claude.available })],
+  // Numbers for the screens the assistant builds (PriceChart, Quote): from the app, never from the model.
+  [
+    "GET",
+    /^\/api\/market\/chart$/,
+    async ({ url, desk }) => {
+      const out = await runTool("get_price_history", { symbol: url.searchParams.get("symbol") ?? "", period: url.searchParams.get("period") ?? "1y" }, desk.ctx("assistant"), { canFile: false });
+      if (out.isError || !out.card) throw new HttpError(404, out.content);
+      return out.card;
+    },
+  ],
+  [
+    "GET",
+    /^\/api\/market\/quotes$/,
+    async ({ url, desk, S }) => {
+      const syms = (url.searchParams.get("symbols") ?? "").split(",").map((x) => x.trim().toUpperCase()).filter(Boolean).slice(0, 20);
+      const insts = syms.map((x) => S.book.get(x));
+      const quotes = await desk.market.quotes(insts.flatMap((i) => (i ? [i.key] : [])));
+      return {
+        source: desk.market.source,
+        quotes: syms.map((x, n) => {
+          const inst = insts[n];
+          if (!inst) return { symbol: x, error: "Not an NSE symbol" };
+          const q = quotes.get(inst.key);
+          return { symbol: inst.symbol, name: inst.name, price: q?.ltp ?? null, changePct: q?.ltp && q.prevClose ? Math.round(pctChange(q.prevClose, q.ltp) * 100) / 100 : null };
+        }),
+      };
+    },
+  ],
   ["POST", /^\/api\/chat\/reset$/, async ({ desk }) => desk.assistant.reset()],
   [
     "POST",
@@ -225,9 +256,10 @@ async function upstoxCallback(req: http.IncomingMessage, res: http.ServerRespons
   return redirect(res, "/?upstox=connected");
 }
 
-/** POST /api/chat: answers one message, streamed as Server-Sent Events (one ChatEvent per event). */
+/** POST /api/chat: answers one message ({ text }) or a press on a screen ({ action }), streamed as Server-Sent Events (one ChatEvent per event). */
 async function chat(req: http.IncomingMessage, res: http.ServerResponse, desk: Desk, S: Shared) {
-  const text = (await body<{ text?: string }>(req)).text ?? "";
+  const b = await body<{ text?: string; action?: unknown }>(req);
+  const input = b.action !== undefined ? { action: b.action } : (b.text ?? "");
   if (!S.claude.available) throw new HttpError(400, "Claude isn't set up on this server (ANTHROPIC_API_KEY)");
   const no = await desk.spend("chat");
   if (no) throw new HttpError(429, no);
@@ -235,7 +267,7 @@ async function chat(req: http.IncomingMessage, res: http.ServerResponse, desk: D
   // If the phone drops the connection, the answer still finishes and is saved (GET /api/chat shows it).
   const out = (e: ChatEvent) => !res.writableEnded && !res.destroyed && res.write(`data: ${JSON.stringify(e)}\n\n`);
   try {
-    await desk.assistant.ask(text, out);
+    await desk.assistant.ask(input, out);
   } catch (e) {
     // No answer: the question doesn't count against today's limit.
     await desk.refund("chat");
@@ -253,6 +285,8 @@ export async function handle(req: http.IncomingMessage, res: http.ServerResponse
   const is = (method: string, path: string) => req.method === method && p === path;
   try {
     if (is("GET", "/api/me")) return send(res, 200, me(req));
+    // The screen catalog's JSON Schema (its id is this address). Public: it's the same for everyone.
+    if (is("GET", "/api/a2ui/catalog")) return send(res, 200, catalogSchema(), { "Cache-Control": "public, max-age=3600" });
     const problems = configProblems();
     if (problems.length) throw new HttpError(503, `This server isn't set up yet. Missing: ${problems.join("; ")}`);
     const S = await sharedDeps();

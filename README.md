@@ -53,6 +53,22 @@ candles, so the demo portfolio shows real last-close prices.
 
 ## What it does
 
+### Screens the assistant builds (A2UI)
+
+When a few taps beat a back-and-forth, the assistant builds a small screen inside the
+chat: a SIP form, a pick among your holdings, two stocks side by side. It uses
+[A2UI](https://a2ui.org) v0.9, Google's open format for agent-built interfaces: the
+model describes the screen as data, and the app draws it with its own components, so it
+looks like the rest of Upstox and can't run code.
+
+| | |
+|---|---|
+| **Our catalog** | 21 components in `shared/a2ui.ts`: layout (Column, Row, Card, Tabs, Divider), content (Text, Metric, KeyValue, Badge, Bar, Table), inputs (TextField, ChoicePicker, Slider, Stepper, Switch), Button, and four that read the app's own numbers: Quote, PriceChart, Holdings and OrderRequest. Functions: A2UI's basic ones in Indian formats (₹1,25,000), without `openUrl`, plus `openScreen` to open a tab. |
+| **Checked first** | Every screen goes through A2UI's own strict message processor on the server (each prop against the catalog, a root, no dangling ids, known functions only), plus our rules: only requests that were filed, only real NSE symbols, size limits. A failing screen goes back to the model as `VALIDATION_FAILED` and it fixes it. |
+| **Still can't place an order** | Buttons only send your choices back to the assistant (which can at most file a request) or open a tab. A filed request appears on the screen as the normal approval card, slide included. |
+| **Live and saved** | Inputs fill the screen's data; checks (`required`, `numeric`…) disable the button with a reason. A press becomes your next turn, with the button's words and what you entered. The assistant can then change the same screen in place (it moves down to its latest answer). The chat replays every screen after a reload, as you left it. |
+| **Light** | The renderer (`@a2ui/react` + `@a2ui/web_core` 0.13.0, pinned) is a separate 100 KB chunk that loads only when a chat has a screen. |
+
 ### Step 2: agents that think
 
 | | |
@@ -65,7 +81,8 @@ candles, so the demo portfolio shows real last-close prices.
 What the agents can call (`server/ai/tools.ts`): `get_portfolio`, `get_quotes`,
 `get_price_history`, `get_news`, `get_fundamentals`, `get_team`, and two that only
 **file** requests: `propose_order` and `propose_stop_loss`. Advice-only agents (the
-Trading coach) don't get the filing tools at all.
+Trading coach) don't get the filing tools at all. The chat also has `show_ui` (screens,
+above); agent checks and the brief don't.
 
 How the model is used (`server/ai/model.ts`, `loop.ts`):
 - a streaming tool loop, capped at 10 steps per answer
@@ -109,10 +126,12 @@ server/   Node HTTP API; the app polls it every few seconds
   instruments.ts Upstox's NSE instrument master (cached; shipped with the Vercel build)
   demo.ts        scripted agent requests (used without Claude)
   ai/            Claude: model client, tools, loop, prompts, assistant, agent runs and brief
-shared/   types and formatting used by both sides
+    ui.ts        screens (A2UI): show_ui → checked A2UI messages; presses back into the chat
+shared/   types and formatting used by both sides; a2ui.ts is the screen catalog
+web/src/a2ui/  the screen renderer (lazy): our components, the runtime that replays the chat
 supabase/ agents.sql: the table and functions in the Scanners project
 scripts/  build-vercel.ts: the Vercel build (Build Output API)
-test/     engine, AI layer (scripted model) and hosted tests (sign-in, sealing, isolation, concurrency)
+test/     engine, AI layer (scripted model), screens and hosted tests (sign-in, sealing, isolation, concurrency)
 docs/     handover, strategy, product plan, Upstox API notes
 ```
 
@@ -134,7 +153,7 @@ changed under a short lock so several server instances never trample each other.
 ## Checks
 
 ```bash
-npm test              # approval engine, AI layer (scripted model), hosted pieces
+npm test              # approval engine, AI layer (scripted model), screens, hosted pieces
 npm run typecheck
 npm run build
 npm run vercel-build  # the Vercel output in .vercel/output

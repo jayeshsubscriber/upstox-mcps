@@ -119,7 +119,7 @@ where kind = 'user' and user_id = 'name@upstox.com';
 select user_id, value from public.agents_kv where kind = 'usage:' || to_char(now() at time zone 'Asia/Kolkata', 'YYYY-MM-DD');
 
 -- Remove the test accounts made while building this
-delete from public.agents_kv where user_id in ('selftest@upstox.com', 'walkthrough@upstox.com') or kind = 'usage:1999-01-01';
+delete from public.agents_kv where user_id in ('selftest@upstox.com', 'walkthrough@upstox.com', 'a2ui-check@upstox.com') or kind = 'usage:1999-01-01';
 
 -- Rotate the server key (then update AGENTS_DB_KEY on Vercel and redeploy)
 select vault.update_secret((select id from vault.secrets where name = 'agents_server_key'), encode(extensions.gen_random_bytes(32), 'hex'));

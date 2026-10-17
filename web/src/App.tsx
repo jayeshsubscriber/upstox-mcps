@@ -233,7 +233,7 @@ function Phone({ state, error, me, onSignedOut }: { state: AppState; error: stri
             }}
           />
         )}
-        {tab === "ask" && <Ask state={state} actions={actions} question={question} onQuestionUsed={() => setQuestion(null)} />}
+        {tab === "ask" && <Ask state={state} actions={actions} question={question} onQuestionUsed={() => setQuestion(null)} go={setTab} />}
         {tab === "approvals" && <Approvals state={state} actions={actions} />}
         {tab === "agents" && <Agents state={state} onOpen={setAgentId} onPauseAll={pauseAll} onToggle={toggleAgent} onCheck={checkAgent} onCheckAll={checkAll} />}
         {tab === "activity" && <Activity state={state} />}

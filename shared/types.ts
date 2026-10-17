@@ -3,6 +3,7 @@
  * an agent never places an order. It files an OrderRequest; only the user's
  * approval turns it into an order.
  */
+import type { A2uiMessage } from "./a2ui";
 
 export type Side = "BUY" | "SELL";
 export type Product = "D" | "I";
@@ -159,9 +160,16 @@ export interface Agent {
 /** Something the app shows next to an answer. */
 export type Card =
   | { type: "chart"; symbol: string; period: string; points: { d: string; c: number }[]; changePct: number }
-  | { type: "request"; requestId: string };
+  | { type: "request"; requestId: string }
+  /** A screen the assistant built (A2UI messages for one surface; a later card for the same surface changes it). */
+  | { type: "ui"; id: string; surfaceId: string; messages: A2uiMessage[] };
 
-export type ChatPart = { type: "text"; text: string } | { type: "tool"; label: string; ok: boolean } | { type: "card"; card: Card };
+export type ChatPart =
+  | { type: "text"; text: string }
+  | { type: "tool"; label: string; ok: boolean }
+  | { type: "card"; card: Card }
+  /** The user pressed a button on a screen (with the screen's data at that moment). */
+  | { type: "action"; surfaceId: string; name: string; label: string; data?: Record<string, unknown> };
 
 export interface ChatItem {
   id: string;
